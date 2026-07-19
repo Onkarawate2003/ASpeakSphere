@@ -4,18 +4,14 @@ import { useState, useEffect, FormEvent } from "react";
 import {
     Bell,
     BookOpen,
-    CalendarDays,
     Check,
     CheckCircle2,
     Flame,
     Globe2,
-    Languages,
     Loader2,
     Mail,
     Mic2,
-    Moon,
     Settings as SettingsIcon,
-    ShieldQuestion,
     Target,
     UserRound,
     XCircle,
@@ -86,15 +82,6 @@ const FOCUS_AREA_OPTIONS = [
 const CHANNEL_OPTIONS: { value: NotificationChannel; label: string }[] = [
     { value: "push", label: "Push notifications" },
     { value: "email", label: "Email" },
-];
-
-// ─── Read-only section list ─────────────────────────────────────────────────
-
-const READ_ONLY_SECTIONS = [
-    { title: "Theme", description: "Light interface.", icon: Moon },
-    { title: "Language", description: "English interface.", icon: Languages },
-    { title: "Support", description: "Help center and contact options.", icon: ShieldQuestion },
-    { title: "About", description: "ASpeakSphere preview dashboard.", icon: CalendarDays },
 ];
 
 // ─── Shared field components ────────────────────────────────────────────────
@@ -565,37 +552,6 @@ export default function SettingsPage() {
                                     </FieldWrapper>
                                 </>
                             )}
-                        </div>
-                    </section>
-
-                    {/* ── Read-only sections ────────────────────────────────── */}
-                    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <div className="mb-5 flex items-center justify-between gap-4">
-                            <div>
-                                <p className="text-sm font-bold text-slate-500">App preferences</p>
-                                <h2 className="mt-1 text-base font-bold text-slate-900">Interface settings</h2>
-                            </div>
-                            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-400">
-                                Read-only
-                            </span>
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                            {READ_ONLY_SECTIONS.map((section) => {
-                                const Icon = section.icon;
-                                return (
-                                    <article key={section.title} className="rounded-3xl border border-slate-200 bg-slate-50/70 p-5">
-                                        <div className="flex items-start gap-4">
-                                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
-                                                <Icon className="h-5 w-5" aria-hidden="true" />
-                                            </div>
-                                            <div className="min-w-0">
-                                                <h3 className="text-base font-bold text-slate-700">{section.title}</h3>
-                                                <p className="mt-1 text-sm leading-6 text-slate-400">{section.description}</p>
-                                            </div>
-                                        </div>
-                                    </article>
-                                );
-                            })}
                         </div>
                     </section>
 
