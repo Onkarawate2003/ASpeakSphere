@@ -1,0 +1,923 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ---- AI Conversation: bubble entrance animations ---- */
+@keyframes spk-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.spk-bubble-enter {
+  animation: spk-bubble-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spk-bubble-enter {
+    animation: none;
+  }
+}
+
+/* ---- AI Conversation: typing indicator dots ---- */
+@keyframes spk-typing-dot {
+
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+.spk-typing-dot {
+  animation: spk-typing-dot 1.2s ease-in-out infinite;
+}
+
+/* Stagger the three dots so they bounce in sequence. */
+.spk-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.spk-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spk-typing-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ---- AI Conversation: completion summary entrance animation ---- */
+@keyframes spk-summary-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.spk-summary-enter {
+  animation: spk-summary-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spk-summary-enter {
+    animation: none;
+  }
+}
+
+/* ============================================================
+ * Phase 4 — Voice Conversation UI animations
+ * ============================================================ */
+
+/* Microphone pulse — expanding ring while recording */
+@keyframes spk-mic-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+.spk-mic-pulse {
+  animation: spk-mic-pulse 1.8s ease-out infinite;
+}
+
+/* Microphone glow — soft box-shadow breathing */
+@keyframes spk-mic-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+  }
+
+  50% {
+    box-shadow: 0 0 0 14px rgba(239, 68, 68, 0);
+  }
+}
+
+.spk-mic-glow {
+  animation: spk-mic-glow 1.8s ease-in-out infinite;
+}
+
+/* Microphone ripple — multiple expanding rings */
+@keyframes spk-mic-ripple {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.5;
+  }
+
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.spk-mic-ripple {
+  animation: spk-mic-ripple 2s ease-out infinite;
+}
+
+.spk-mic-ripple:nth-child(2) {
+  animation-delay: 0.6s;
+}
+
+.spk-mic-ripple:nth-child(3) {
+  animation-delay: 1.2s;
+}
+
+/* Microphone scale — subtle breathing while processing */
+@keyframes spk-mic-scale {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.spk-mic-scale {
+  animation: spk-mic-scale 1.5s ease-in-out infinite;
+}
+
+/* Waveform bars — vertical bounce */
+@keyframes spk-wave-bar {
+
+  0%,
+  100% {
+    transform: scaleY(0.25);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.spk-wave-bar {
+  animation: spk-wave-bar 0.9s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* Avatar glow — when AI is speaking */
+@keyframes spk-avatar-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+}
+
+.spk-avatar-glow {
+  animation: spk-avatar-glow 1.6s ease-in-out infinite;
+}
+
+/* Avatar pulse — subtle scale */
+@keyframes spk-avatar-pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.spk-avatar-pulse {
+  animation: spk-avatar-pulse 1.6s ease-in-out infinite;
+}
+
+/* Speaking dots indicator */
+@keyframes spk-speaking-dot {
+
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.spk-speaking-dot {
+  animation: spk-speaking-dot 1s ease-in-out infinite;
+}
+
+.spk-speaking-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.spk-speaking-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Reduced-motion fallback for all Phase 4 animations.
+   Also covers Tailwind's built-in `animate-pulse` / `animate-spin`
+   utilities used by the voice components (status dots, processing
+   loader) so users who prefer reduced motion see no infinite
+   motion from either custom or framework animations. */
+@media (prefers-reduced-motion: reduce) {
+
+  .spk-mic-pulse,
+  .spk-mic-glow,
+  .spk-mic-ripple,
+  .spk-mic-scale,
+  .spk-wave-bar,
+  .spk-avatar-glow,
+  .spk-avatar-pulse,
+  .spk-speaking-dot {
+    animation: none;
+  }
+
+  .animate-pulse,
+  .animate-spin {
+    animation: none;
+  }
+}
+
+/* ============================================================
+ * Phase M14 — AI Animated Avatar (AnimatedTutorAvatar)
+ * Pure CSS + SVG keyframes. No JS animation loop, no deps.
+ *
+ * State classes (.spk-ava-*) are applied to the SVG wrapper by
+ * `AnimatedTutorAvatar` based on the `AvatarState` derived in
+ * `useAvatarState`. Each state composes a small set of named
+ * keyframes that target the SVG sub-groups by id:
+ *   #ava-head  — breathing scale + sway
+ *   #ava-eyes  — blink (scaleY)
+ *   #ava-mouth — talk (open/close via opacity on the overlay)
+ *   #ava-brows — attentive raise
+ *   #ava-glow  — halo intensity
+ *
+ * Speech-sync contract: the talking keyframe runs ONLY while the
+ * `.spk-ava-speaking` class is present, which is set only when
+ * `PlaybackState === "playing"` (real audio). When audio ends the
+ * class is removed and the mouth returns to its closed rest pose —
+ * no looping after speech finishes.
+ * ============================================================ */
+
+/* --- Breathing (idle baseline, always gentle) --- */
+@keyframes spk-ava-breathe {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.025);
+  }
+}
+
+/* --- Head sway (subtle, idle + listening) --- */
+@keyframes spk-ava-sway {
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-1.5deg);
+  }
+
+  75% {
+    transform: rotate(1.5deg);
+  }
+}
+
+/* --- Blink (eyes scaleY to 0.1 briefly) --- */
+@keyframes spk-ava-blink {
+
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  96% {
+    transform: scaleY(0.1);
+  }
+}
+
+/* --- Talk (mouth overlay opacity open/close) --- */
+@keyframes spk-ava-talk {
+
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+
+  80% {
+    opacity: 1;
+  }
+}
+
+/* --- Attentive brow raise (listening) --- */
+@keyframes spk-ava-brow {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+/* --- Look up (thinking) --- */
+@keyframes spk-ava-lookup {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+
+/* --- Soft pulse (loading) --- */
+@keyframes spk-ava-softpulse {
+
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.7;
+    transform: scale(1.04);
+  }
+}
+
+/* --- Gentle shake (error) --- */
+@keyframes spk-ava-shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  20% {
+    transform: translateX(-2px);
+  }
+
+  40% {
+    transform: translateX(2px);
+  }
+
+  60% {
+    transform: translateX(-1px);
+  }
+
+  80% {
+    transform: translateX(1px);
+  }
+}
+
+/* --- Speaking halo (stronger glow ring) --- */
+@keyframes spk-ava-halo {
+
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.75;
+    transform: scale(1.06);
+  }
+}
+
+/* ---- State profiles ----
+   Each .spk-ava-* class wires the relevant keyframes to the
+   matching SVG sub-groups. Animations are GPU-friendly
+   (transform/opacity only). */
+
+/* IDLE — gentle breathing + occasional blink + faint sway */
+.spk-ava-idle #ava-head {
+  animation: spk-ava-breathe 4s ease-in-out infinite,
+    spk-ava-sway 9s ease-in-out infinite;
+}
+
+.spk-ava-idle #ava-eyes {
+  animation: spk-ava-blink 5s ease-in-out infinite;
+}
+
+.spk-ava-idle #ava-glow {
+  animation: spk-ava-softpulse 4s ease-in-out infinite;
+}
+
+/* LISTENING — attentive tilt + brow raise + faster blink */
+.spk-ava-listening #ava-head {
+  animation: spk-ava-sway 4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+.spk-ava-listening #ava-brows {
+  animation: spk-ava-brow 2s ease-in-out infinite;
+}
+
+.spk-ava-listening #ava-eyes {
+  animation: spk-ava-blink 3s ease-in-out infinite;
+}
+
+.spk-ava-listening #ava-glow {
+  animation: spk-ava-softpulse 2.5s ease-in-out infinite;
+}
+
+/* THINKING — subtle look-up + slow blink */
+.spk-ava-thinking #ava-head {
+  animation: spk-ava-lookup 3s ease-in-out infinite;
+}
+
+.spk-ava-thinking #ava-eyes {
+  animation: spk-ava-blink 4s ease-in-out infinite;
+}
+
+.spk-ava-thinking #ava-glow {
+  animation: spk-ava-softpulse 3s ease-in-out infinite;
+}
+
+/* LOADING — soft breathing pulse (no mouth movement) */
+.spk-ava-loading #ava-head {
+  animation: spk-ava-breathe 2s ease-in-out infinite;
+}
+
+.spk-ava-loading #ava-glow {
+  animation: spk-ava-softpulse 1.6s ease-in-out infinite;
+}
+
+/* SPEAKING — mouth talks + blink + halo + gentle breathe.
+   This is the speech-synced state: runs only while real audio
+   is playing. Mouth overlay animates open/close. */
+.spk-ava-speaking #ava-head {
+  animation: spk-ava-breathe 3s ease-in-out infinite;
+}
+
+.spk-ava-speaking #ava-eyes {
+  animation: spk-ava-blink 4s ease-in-out infinite;
+}
+
+.spk-ava-speaking #ava-glow {
+  animation: spk-ava-halo 1.4s ease-in-out infinite;
+}
+
+/* The closed-mouth stroke fades out while talking so the open
+   mouth overlay reads clearly. */
+.spk-ava-speaking .spk-ava-mouth-closed {
+  opacity: 0.25;
+  transition: opacity 0.15s ease;
+}
+
+.spk-ava-speaking .spk-ava-mouth-open {
+  animation: spk-ava-talk 0.42s ease-in-out infinite;
+}
+
+/* PAUSED — mouth holds (no animation), calm breathing */
+.spk-ava-paused #ava-head {
+  animation: spk-ava-breathe 5s ease-in-out infinite;
+}
+
+.spk-ava-paused .spk-ava-mouth-open {
+  opacity: 0.3;
+}
+
+.spk-ava-paused #ava-glow {
+  opacity: 0.4;
+}
+
+/* ERROR — gentle head shake, no mouth */
+.spk-ava-error #ava-head {
+  animation: spk-ava-shake 0.6s ease-in-out 2;
+}
+
+.spk-ava-error #ava-glow {
+  animation: spk-ava-softpulse 1s ease-in-out infinite;
+  stroke: #ef4444;
+}
+
+/* Reduced-motion fallback for all Phase M14 avatar animations.
+   Users who prefer reduced motion see a static, friendly avatar
+   with no infinite motion. The mouth stays in its closed rest
+   pose (the default smile), so the avatar never appears frozen
+   mid-talk. */
+@media (prefers-reduced-motion: reduce) {
+
+  .spk-ava-idle #ava-head,
+  .spk-ava-idle #ava-eyes,
+  .spk-ava-idle #ava-glow,
+  .spk-ava-listening #ava-head,
+  .spk-ava-listening #ava-brows,
+  .spk-ava-listening #ava-eyes,
+  .spk-ava-listening #ava-glow,
+  .spk-ava-thinking #ava-head,
+  .spk-ava-thinking #ava-eyes,
+  .spk-ava-thinking #ava-glow,
+  .spk-ava-loading #ava-head,
+  .spk-ava-loading #ava-glow,
+  .spk-ava-speaking #ava-head,
+  .spk-ava-speaking #ava-eyes,
+  .spk-ava-speaking #ava-glow,
+  .spk-ava-speaking .spk-ava-mouth-open,
+  .spk-ava-paused #ava-head,
+  .spk-ava-paused #ava-glow,
+  .spk-ava-error #ava-head,
+  .spk-ava-error #ava-glow {
+    animation: none;
+  }
+
+  /* Keep the closed-mouth smile visible under reduced motion. */
+  .spk-ava-speaking .spk-ava-mouth-closed {
+    opacity: 1;
+  }
+
+  .spk-ava-speaking .spk-ava-mouth-open,
+  .spk-ava-paused .spk-ava-mouth-open {
+    opacity: 0;
+  }
+}
+
+/* =========================================================================
+   Phase M14 Enhancement — Tutor Portrait (AI Tutor.jpg) animations
+   Lightweight, GPU-friendly transforms/opacity on a static <img>.
+   No facial-landmark warping (would require MediaPipe/TensorFlow.js).
+   ========================================================================= */
+
+/* Subtle breathing — gentle scale pulse, never exceeds 1.012. */
+@keyframes spk-portrait-breathe {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.012);
+  }
+}
+
+/* Natural floating — slow vertical drift, ~6s loop. */
+@keyframes spk-portrait-float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* Speaking glow — pulsing warm halo behind the portrait. */
+@keyframes spk-portrait-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.35),
+      0 18px 40px -12px rgba(15, 23, 42, 0.45);
+  }
+
+  50% {
+    box-shadow: 0 0 0 14px rgba(99, 102, 241, 0),
+      0 22px 50px -10px rgba(15, 23, 42, 0.55);
+  }
+}
+
+/* Gentle head tilt — very subtle rotation, idle only. */
+@keyframes spk-portrait-tilt {
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(0.6deg);
+  }
+
+  75% {
+    transform: rotate(-0.6deg);
+  }
+}
+
+/* Listening ring — soft expanding ring while user is being heard. */
+@keyframes spk-portrait-listen-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+
+  100% {
+    box-shadow: 0 0 0 18px rgba(16, 185, 129, 0);
+  }
+}
+
+/* Thinking shimmer — slow hue drift on the halo. */
+@keyframes spk-portrait-think-shimmer {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 6px rgba(168, 85, 247, 0.18),
+      0 18px 40px -12px rgba(15, 23, 42, 0.45);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(168, 85, 247, 0.28),
+      0 20px 46px -10px rgba(15, 23, 42, 0.5);
+  }
+}
+
+/* Portrait base — the <img> wrapper. */
+.spk-portrait {
+  position: relative;
+  display: block;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 35%,
+      #1e293b 0%,
+      #0f172a 70%,
+      #020617 100%);
+  will-change: transform, box-shadow;
+}
+
+.spk-portrait__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 30%;
+  transform-origin: 50% 60%;
+  will-change: transform;
+}
+
+/* Idle — breathing + floating + gentle tilt layered on the image. */
+.spk-portrait--idle .spk-portrait__img {
+  animation: spk-portrait-breathe 5.5s ease-in-out infinite,
+    spk-portrait-tilt 9s ease-in-out infinite;
+}
+
+.spk-portrait--idle {
+  animation: spk-portrait-float 6s ease-in-out infinite;
+}
+
+/* Listening — green listen-ring on the wrapper, image keeps breathing. */
+.spk-portrait--listening {
+  animation: spk-portrait-listen-ring 1.8s ease-out infinite;
+}
+
+.spk-portrait--listening .spk-portrait__img {
+  animation: spk-portrait-breathe 4s ease-in-out infinite;
+}
+
+/* Thinking — purple shimmer halo, image breathing slightly faster. */
+.spk-portrait--thinking {
+  animation: spk-portrait-think-shimmer 2.4s ease-in-out infinite;
+}
+
+.spk-portrait--thinking .spk-portrait__img {
+  animation: spk-portrait-breathe 3.4s ease-in-out infinite;
+}
+
+/* Loading — same as thinking (waiting on network). */
+.spk-portrait--loading {
+  animation: spk-portrait-think-shimmer 2.4s ease-in-out infinite;
+}
+
+.spk-portrait--loading .spk-portrait__img {
+  animation: spk-portrait-breathe 3.4s ease-in-out infinite;
+}
+
+/* Speaking — warm indigo glow halo, image breathing faster (speech cadence). */
+.spk-portrait--speaking {
+  animation: spk-portrait-glow 1.6s ease-in-out infinite;
+}
+
+.spk-portrait--speaking .spk-portrait__img {
+  animation: spk-portrait-breathe 2.6s ease-in-out infinite;
+}
+
+/* Paused — frozen, no animation (mouth/visual at rest). */
+.spk-portrait--paused,
+.spk-portrait--paused .spk-portrait__img {
+  animation: none;
+}
+
+/* Error — subtle red-tinted static halo. */
+.spk-portrait--error {
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.25),
+    0 18px 40px -12px rgba(15, 23, 42, 0.45);
+}
+
+/* Reduced motion — disable all portrait motion, keep static glow. */
+@media (prefers-reduced-motion: reduce) {
+
+  .spk-portrait,
+  .spk-portrait__img,
+  .spk-portrait--idle,
+  .spk-portrait--idle .spk-portrait__img,
+  .spk-portrait--listening,
+  .spk-portrait--listening .spk-portrait__img,
+  .spk-portrait--thinking,
+  .spk-portrait--thinking .spk-portrait__img,
+  .spk-portrait--loading,
+  .spk-portrait--loading .spk-portrait__img,
+  .spk-portrait--speaking,
+  .spk-portrait--speaking .spk-portrait__img {
+    animation: none;
+  }
+}
+
+/* =========================================================================
+   Phase M14 Enhancement — Premium floating microphone
+   Large primary interaction element with state-driven glow/ripple/pulse.
+   ========================================================================= */
+
+/* Idle — soft indigo glow that breathes gently. */
+@keyframes spk-pmic-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 10px 30px -8px rgba(99, 102, 241, 0.45),
+      0 0 0 0 rgba(99, 102, 241, 0.25);
+  }
+
+  50% {
+    box-shadow: 0 14px 38px -8px rgba(99, 102, 241, 0.6),
+      0 0 0 10px rgba(99, 102, 241, 0);
+  }
+}
+
+/* Recording — expanding ripple rings (red, urgency). */
+@keyframes spk-pmic-ripple {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5),
+      0 10px 30px -8px rgba(239, 68, 68, 0.5);
+  }
+
+  100% {
+    box-shadow: 0 0 0 26px rgba(239, 68, 68, 0),
+      0 10px 30px -8px rgba(239, 68, 68, 0.5);
+  }
+}
+
+/* Recording — inner pulse (scale). */
+@keyframes spk-pmic-pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+/* Listening — active emerald glow (transcribing). */
+@keyframes spk-pmic-listening-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 10px 30px -8px rgba(16, 185, 129, 0.5),
+      0 0 0 0 rgba(16, 185, 129, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 14px 38px -8px rgba(16, 185, 129, 0.65),
+      0 0 0 12px rgba(16, 185, 129, 0);
+  }
+}
+
+/* Speaking — disabled state, muted grey glow. */
+@keyframes spk-pmic-disabled-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 8px 24px -10px rgba(100, 116, 139, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 8px 24px -10px rgba(100, 116, 139, 0.55);
+  }
+}
+
+.spk-pmic {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  will-change: transform, box-shadow;
+  transition: transform 0.18s ease, background-color 0.18s ease;
+}
+
+.spk-pmic:active {
+  transform: scale(0.96);
+}
+
+.spk-pmic--idle {
+  animation: spk-pmic-glow 3s ease-in-out infinite;
+}
+
+.spk-pmic--recording {
+  animation: spk-pmic-ripple 1.4s ease-out infinite;
+}
+
+.spk-pmic--recording .spk-pmic__icon {
+  animation: spk-pmic-pulse 1.2s ease-in-out infinite;
+}
+
+.spk-pmic--listening {
+  animation: spk-pmic-listening-glow 2s ease-in-out infinite;
+}
+
+.spk-pmic--speaking,
+.spk-pmic--disabled {
+  animation: spk-pmic-disabled-glow 3s ease-in-out infinite;
+  cursor: not-allowed;
+}
+
+/* Reduced motion — disable all mic motion. */
+@media (prefers-reduced-motion: reduce) {
+
+  .spk-pmic,
+  .spk-pmic--idle,
+  .spk-pmic--recording,
+  .spk-pmic--recording .spk-pmic__icon,
+  .spk-pmic--listening,
+  .spk-pmic--speaking,
+  .spk-pmic--disabled {
+    animation: none;
+  }
+}
