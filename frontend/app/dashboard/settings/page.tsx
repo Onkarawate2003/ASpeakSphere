@@ -21,7 +21,12 @@ import { DashboardLayout, LoadingSkeleton } from "../../../components/dashboard"
 import { useDashboard } from "@/features/dashboard/DashboardContext";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useAccent } from "@/features/accent/AccentContext";
-import { ensureNotificationPermission } from "@/features/notifications";
+import { useProgress } from "@/features/progress/ProgressContext";
+import {
+    scheduleDailyReminder,
+    cancelDailyReminder,
+    generateSmartReminderMessage,
+} from "@/features/notifications";
 import { showSuccessAlert, showErrorAlert } from "@/lib/sweetAlert";
 import {
     learningGoalLabels,
@@ -104,6 +109,9 @@ export default function SettingsPage() {
     // via /api/accents (single source of truth). The active accent label is
     // shown live so the user sees the current value while editing.
     const { accents, accentLabel, hasAccent } = useAccent();
+    // Phase 7 — same progress data the dashboard/stats page already reads,
+    // used to pick the daily reminder's message (see smartReminderService.ts).
+    const { progress } = useProgress();
 
     const [displayName, setDisplayName] = useState("");
     const [learningGoal, setLearningGoal] = useState<LearningGoal>("career");
@@ -167,19 +175,6 @@ export default function SettingsPage() {
 
         setIsSaving(true);
 
-        // Only requested when the user is committing to reminders being on.
-        // Denial/failure must never block saving the rest of the form —
-        // it only changes the message shown after a successful save.
-        let notificationPermissionDenied = false;
-        if (notificationsEnabled) {
-            try {
-                const { state } = await ensureNotificationPermission();
-                notificationPermissionDenied = state === "denied";
-            } catch {
-                // Ignored on purpose — saving must never depend on this.
-            }
-        }
-
         const payload: OnboardingPayload = {
             display_name: displayName.trim(),
             learning_goal: learningGoal,
@@ -201,6 +196,26 @@ export default function SettingsPage() {
 
         if (success) {
             await refreshUser();
+
+            // Reflect the toggle in the device's actual scheduled notification.
+            // This runs after the backend write above already succeeded, and
+            // its outcome only changes the message shown next — it never
+            // blocks or fails the save itself. scheduleDailyReminder() already
+            // checks/requests permission internally, so it isn't done again here.
+            let notificationPermissionDenied = false;
+            try {
+                if (notificationsEnabled) {
+                    const message = generateSmartReminderMessage(progress);
+                    const state = await scheduleDailyReminder(reminderTime.trim(), message);
+                    notificationPermissionDenied = state === "denied";
+                } else {
+                    await cancelDailyReminder();
+                }
+            } catch {
+                // Ignored on purpose — the saved preferences are already
+                // persisted regardless of local scheduling outcome.
+            }
+
             await showSuccessAlert({
                 title: "Preferences Saved!",
                 text: notificationPermissionDenied
