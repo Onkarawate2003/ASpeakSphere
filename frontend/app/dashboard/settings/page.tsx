@@ -168,10 +168,13 @@ export default function SettingsPage() {
         setIsSaving(true);
 
         // Only requested when the user is committing to reminders being on.
-        // Denial/failure must never block saving the rest of the form.
+        // Denial/failure must never block saving the rest of the form —
+        // it only changes the message shown after a successful save.
+        let notificationPermissionDenied = false;
         if (notificationsEnabled) {
             try {
-                await ensureNotificationPermission();
+                const { state } = await ensureNotificationPermission();
+                notificationPermissionDenied = state === "denied";
             } catch {
                 // Ignored on purpose — saving must never depend on this.
             }
@@ -200,7 +203,9 @@ export default function SettingsPage() {
             await refreshUser();
             await showSuccessAlert({
                 title: "Preferences Saved!",
-                text: "Your preferences have been saved successfully.",
+                text: notificationPermissionDenied
+                    ? "Your preferences were saved, but notifications are turned off for this app. Enable them in your Android Settings to receive reminders."
+                    : "Your preferences have been saved successfully.",
             });
         } else {
             await showErrorAlert({
