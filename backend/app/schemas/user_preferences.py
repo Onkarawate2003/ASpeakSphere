@@ -58,7 +58,10 @@ class UserPreferencesBase(BaseModel):
     focus_areas: List[str] = Field(default_factory=list)
     english_variant: Optional[EnglishVariant] = None
     notifications_enabled: bool = False
-    reminder_time: Optional[str] = Field(default=None, pattern=r"^([01]\\d|2[0-3]):[0-5]\\d$")
+    # Single backslash: this is already a raw string, so `\d` (not `\\d`)
+    # is the digit escape. A doubled backslash here previously made the
+    # pattern require a literal "\" character, rejecting every real time.
+    reminder_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     reminder_frequency: Optional[ReminderFrequency] = None
     channels: List[NotificationChannel] = Field(default_factory=list)
 

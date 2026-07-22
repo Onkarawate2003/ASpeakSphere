@@ -21,6 +21,7 @@ import { DashboardLayout, LoadingSkeleton } from "../../../components/dashboard"
 import { useDashboard } from "@/features/dashboard/DashboardContext";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useAccent } from "@/features/accent/AccentContext";
+import { ensureNotificationPermission } from "@/features/notifications";
 import { showSuccessAlert, showErrorAlert } from "@/lib/sweetAlert";
 import {
     learningGoalLabels,
@@ -155,7 +156,26 @@ export default function SettingsPage() {
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+
+        if (notificationsEnabled && (!reminderTime.trim() || !reminderFrequency)) {
+            await showErrorAlert({
+                title: "Missing reminder details",
+                text: "Please choose a reminder time and frequency, or turn off reminders.",
+            });
+            return;
+        }
+
         setIsSaving(true);
+
+        // Only requested when the user is committing to reminders being on.
+        // Denial/failure must never block saving the rest of the form.
+        if (notificationsEnabled) {
+            try {
+                await ensureNotificationPermission();
+            } catch {
+                // Ignored on purpose — saving must never depend on this.
+            }
+        }
 
         const payload: OnboardingPayload = {
             display_name: displayName.trim(),

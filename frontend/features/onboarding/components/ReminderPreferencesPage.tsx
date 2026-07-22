@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Bell, Check, Clock3, Mail, Smartphone } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { ensureNotificationPermission } from "@/features/notifications";
 import { useOnboarding } from "../OnboardingContext";
 import type { NotificationChannel, ReminderFrequency } from "../types";
 import OnboardingNavigation from "./OnboardingNavigation";
@@ -53,8 +55,26 @@ const channelOptions: ChannelOption[] = [
 
 export default function ReminderPreferencesPage() {
     const { data, updateField, goNext, goBack } = useOnboarding();
+    const [requestingPermission, setRequestingPermission] = useState(false);
     const remindersEnabled = data.notificationsEnabled;
     const isValid = !remindersEnabled || Boolean(data.reminderTime && data.reminderFrequency && data.channels.length > 0);
+
+    // Requests OS notification permission only when the user is committing
+    // to reminders being on. Denial/failure must never block onboarding —
+    // the permission outcome doesn't change what happens next.
+    const handleContinue = async () => {
+        if (remindersEnabled) {
+            setRequestingPermission(true);
+            try {
+                await ensureNotificationPermission();
+            } catch {
+                // Ignored on purpose — continuing must never depend on this.
+            } finally {
+                setRequestingPermission(false);
+            }
+        }
+        goNext();
+    };
 
     const handleReminderToggle = () => {
         const nextEnabled = !remindersEnabled;
@@ -189,7 +209,14 @@ export default function ReminderPreferencesPage() {
                         ) : null}
                     </div>
 
-                    <OnboardingNavigation onBack={goBack} onNext={goNext} nextDisabled={!isValid} backLabel="Back" nextLabel="Continue" />
+                    <OnboardingNavigation
+                        onBack={goBack}
+                        onNext={handleContinue}
+                        nextDisabled={!isValid}
+                        loading={requestingPermission}
+                        backLabel="Back"
+                        nextLabel="Continue"
+                    />
                 </div>
             </section>
         </main>
