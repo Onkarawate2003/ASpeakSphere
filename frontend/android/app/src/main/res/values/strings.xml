@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ASpeakSphere</string>
+    <string name="title_activity_main">ASpeakSphere</string>
+    <string name="package_name">com.aspeaksphere.app</string>
+    <string name="custom_url_scheme">com.aspeaksphere.app</string>
+</resources>

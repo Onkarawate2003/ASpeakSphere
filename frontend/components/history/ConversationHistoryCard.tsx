@@ -41,7 +41,7 @@ export default function ConversationHistoryCard({
     const isActive = conversation.status === "active";
     const isCompleted = conversation.status === "ended";
     const primaryLabel = isActive ? "Continue" : "View";
-    const primaryHref = `/dashboard/history/${conversation.id}`;
+    const primaryHref = `/dashboard/history/view?id=${conversation.id}`;
     const practiceLabel = getPracticeLabel(conversation.practice_type);
     const statusLabel = getStatusLabel(conversation.status);
     // Phase 10.5 — XP earned for this conversation (0 for active sessions or

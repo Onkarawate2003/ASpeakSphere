@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
     ArrowLeft,
     Award,
@@ -52,11 +52,39 @@ import {
  * `ConversationProvider` so they can read `useConversation()` unchanged.
  * The provider is given the conversation's `practice_type` so the labels
  * and difficulty match the stored session.
+ *
+ * Route: this lives at a static path (`/dashboard/history/view`) with the
+ * conversation id passed as a `?id=` query string rather than a dynamic
+ * `[id]` path segment. `output: "export"` (Capacitor static build) requires
+ * every dynamic path segment to be enumerable at build time via
+ * `generateStaticParams()`; conversation ids are per-user database rows
+ * created at runtime, so they can't be enumerated. A query string carries
+ * the same value without Next.js needing to know it ahead of time.
  */
 export default function ConversationDetailPage() {
-    const params = useParams<{ id: string }>();
+    return (
+        <Suspense
+            fallback={
+                <DashboardLayout>
+                    <LoadingSkeleton rows={4} />
+                </DashboardLayout>
+            }
+        >
+            <ConversationDetailPageContent />
+        </Suspense>
+    );
+}
+
+/**
+ * `useSearchParams()` opts the tree above it out of static rendering during
+ * `output: "export"`, so it must sit below a `Suspense` boundary (the
+ * `ConversationDetailPage` wrapper above) rather than at the page's top
+ * level.
+ */
+function ConversationDetailPageContent() {
+    const searchParams = useSearchParams();
     const router = useRouter();
-    const conversationId = Number(params.id);
+    const conversationId = Number(searchParams.get("id"));
 
     const [detail, setDetail] = useState<ConversationDetailDTO | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(true);

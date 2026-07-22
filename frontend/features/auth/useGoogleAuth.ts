@@ -1,87 +1,81 @@
 "use client";
 
-// Google Authentication (Google OAuth 2.0) — loads Google Identity Services
-// and exchanges the resulting ID Token for our own JWT via `loginWithGoogle`
-// (AuthContext), then routes exactly like the email login/verify flows do:
-// completed onboarding -> /dashboard, otherwise -> /onboarding.
+// Google Authentication (Google OAuth 2.0) — exchanges a Google ID Token for
+// our own JWT via `loginWithGoogle` (AuthContext), then routes exactly like
+// the email login/verify flows do: completed onboarding -> /dashboard,
+// otherwise -> /onboarding.
 //
-// The existing UI ("Continue with Google" on both Login and Signup) is a
-// custom-styled button, not Google's own <div>. Google Identity Services
-// only issues an ID Token from *its own* rendered button/One Tap prompt, so
-// this hook renders that real button into an off-screen container (found via
-// a stable DOM id, not a React ref — see `containerId` below) and forwards
-// clicks from our custom button to it. Standard technique for pairing a
-// custom button with GIS. See:
-// https://developers.google.com/identity/gsi/web/guides/personalized-button
+// Uses `@capgo/capacitor-social-login` rather than loading
+// `https://accounts.google.com/gsi/client` directly: Google's Identity
+// Services script is browser-only and never becomes interactive inside a
+// Capacitor Android WebView (Google's own anti-phishing WebView detection
+// blocks it), so a button wired to raw GIS gets stuck permanently "loading"
+// on-device even though it works fine in a normal browser tab. This plugin
+// uses Android's native Credential Manager on-device and falls back to GIS
+// on web, so the same code path works in both.
+//
+// `webClientId` below must be the **Web** OAuth client (same value as
+// `GOOGLE_CLIENT_ID` in the backend's .env) — Android's Credential Manager
+// still needs a matching **Android** OAuth client registered in Google Cloud
+// Console (package name + signing SHA-1), but that client id is never passed
+// here; Google resolves it from the app's package + signature automatically.
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { SocialLogin } from "@capgo/capacitor-social-login";
 
 import { useAuth } from "./AuthContext";
 import { ApiError } from "./api";
 
-declare global {
-    interface Window {
-        google?: {
-            accounts: {
-                id: {
-                    initialize: (config: {
-                        client_id: string;
-                        callback: (response: { credential: string }) => void;
-                        auto_select?: boolean;
-                    }) => void;
-                    renderButton: (
-                        parent: HTMLElement,
-                        options: Record<string, unknown>,
-                    ) => void;
-                };
-            };
-        };
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+let initPromise: Promise<void> | null = null;
+
+// TEMP DEBUG — dumps every enumerable + own property of an error (Capacitor
+// plugin errors are often plain Error instances with an extra `.code`, which
+// JSON.stringify(err) alone would silently drop). Remove once the real
+// native exception has been identified.
+function describeError(err: unknown): string {
+    if (err instanceof Error) {
+        return JSON.stringify({
+            name: err.name,
+            message: err.message,
+            code: (err as { code?: string }).code,
+            stack: err.stack,
+        });
+    }
+    try {
+        return JSON.stringify(err);
+    } catch {
+        return String(err);
     }
 }
 
-const GOOGLE_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
-const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-
-let googleScriptPromise: Promise<void> | null = null;
-
-function loadGoogleScript(): Promise<void> {
-    if (typeof window === "undefined") {
-        return Promise.reject(new Error("Google Sign-In is only available in the browser."));
+function ensureInitialized(): Promise<void> {
+    if (!GOOGLE_CLIENT_ID) {
+        return Promise.reject(new Error("Google Sign-In is not configured yet."));
     }
-    if (window.google?.accounts?.id) {
-        return Promise.resolve();
+    if (!initPromise) {
+        console.log("[GoogleAuth] initialize() starting, webClientId =", GOOGLE_CLIENT_ID);
+        initPromise = SocialLogin.initialize({
+            google: { webClientId: GOOGLE_CLIENT_ID },
+        })
+            .then(() => {
+                console.log("[GoogleAuth] initialize() succeeded");
+            })
+            .catch((err) => {
+                console.error("[GoogleAuth] initialize() FAILED:", err);
+                console.error("[GoogleAuth] initialize() FAILED (details):", describeError(err));
+                initPromise = null; // allow retry on next signIn()
+                throw err;
+            });
     }
-    if (!googleScriptPromise) {
-        googleScriptPromise = new Promise((resolve, reject) => {
-            const existing = document.querySelector<HTMLScriptElement>(
-                `script[src="${GOOGLE_SCRIPT_SRC}"]`,
-            );
-            if (existing) {
-                existing.addEventListener("load", () => resolve());
-                existing.addEventListener("error", () =>
-                    reject(new Error("Failed to load Google Sign-In.")),
-                );
-                return;
-            }
-            const script = document.createElement("script");
-            script.src = GOOGLE_SCRIPT_SRC;
-            script.async = true;
-            script.defer = true;
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error("Failed to load Google Sign-In."));
-            document.head.appendChild(script);
-        });
-    }
-    return googleScriptPromise;
+    return initPromise;
 }
 
 /**
  * Returns everything a "Continue with Google" button needs:
- * - `containerId`: pass to the `id` prop of an off-screen `<div>` that hosts
- *   Google's real button (required so GIS has something to click on our
- *   behalf). A plain string (from `useId`), not a React ref.
  * - `signIn`: call from the custom button's `onClick`.
  * - `loading`: true while the credential is being exchanged for our JWT.
  * - `isConfigured`: false when `NEXT_PUBLIC_GOOGLE_CLIENT_ID` hasn't been set.
@@ -89,75 +83,71 @@ function loadGoogleScript(): Promise<void> {
 export function useGoogleAuth() {
     const router = useRouter();
     const { loginWithGoogle } = useAuth();
-    const reactId = useId();
-    const containerId = `google-signin-btn-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
     const [loading, setLoading] = useState(false);
 
-    // Always call the *latest* handler even though it's registered with GIS
-    // only once (Google's `callback` is captured at `initialize` time).
-    // Updated in an effect (not during render) since mutating a ref's
-    // `.current` while rendering is not allowed.
-    const handleCredentialRef = useRef<(credential: string) => void>(() => {});
-    useEffect(() => {
-        handleCredentialRef.current = async (credential: string) => {
-            setLoading(true);
-            try {
-                const user = await loginWithGoogle(credential);
-                router.push(user.onboarding_completed ? "/dashboard" : "/onboarding");
-            } catch (err) {
-                const message =
-                    err instanceof ApiError
-                        ? err.detail
-                        : "Unable to continue with Google. Please try again.";
-                toast.error(message);
-            } finally {
-                setLoading(false);
-            }
-        };
-    });
-
+    // Warm up the plugin (and, on web, Google's script tag) as soon as the
+    // button mounts so the first tap isn't slowed down by initialization.
     useEffect(() => {
         if (!GOOGLE_CLIENT_ID) return;
-        let cancelled = false;
+        ensureInitialized().catch(() => {
+            // signIn() surfaces a clear error on click if this failed.
+        });
+    }, []);
 
-        loadGoogleScript()
-            .then(() => {
-                if (cancelled || !window.google) return;
-                const container = document.getElementById(containerId);
-                if (!container) return;
-                window.google.accounts.id.initialize({
-                    client_id: GOOGLE_CLIENT_ID,
-                    callback: (response) => handleCredentialRef.current(response.credential),
-                });
-                window.google.accounts.id.renderButton(container, {
-                    type: "standard",
-                    theme: "outline",
-                    size: "large",
-                    width: 320,
-                });
-            })
-            .catch(() => {
-                // signIn() surfaces a clear error on click if this failed.
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [containerId]);
-
-    const signIn = useCallback(() => {
+    const signIn = useCallback(async () => {
         if (!GOOGLE_CLIENT_ID) {
             toast.error("Google Sign-In is not configured yet.");
             return;
         }
-        const container = document.getElementById(containerId);
-        const button = container?.querySelector<HTMLElement>('div[role="button"]');
-        if (!button) {
-            toast.error("Google Sign-In is still loading. Please try again in a moment.");
-            return;
-        }
-        button.click();
-    }, [containerId]);
 
-    return { containerId, signIn, loading, isConfigured: Boolean(GOOGLE_CLIENT_ID) };
+        setLoading(true);
+        try {
+            console.log("[GoogleAuth] signIn() -> ensureInitialized()");
+            await ensureInitialized();
+
+            console.log("[GoogleAuth] signIn() -> SocialLogin.login()");
+            // No custom `scopes` here on purpose: the plugin's Android side
+            // always requests openid + userinfo.email + userinfo.profile by
+            // default (see GoogleProvider.java), which is everything our
+            // backend needs (email, email_verified, given_name, family_name
+            // — see backend/app/api/v1/auth.py). Passing ANY custom `scopes`
+            // array — even a redundant one — makes the native plugin require
+            // MainActivity to implement `ModifiedMainActivityForSocialLoginPlugin`
+            // (an opt-in for incremental-auth scopes we don't use), which is
+            // why this call must stay scope-less.
+            const { result } = await SocialLogin.login({
+                provider: "google",
+                options: {},
+            });
+            console.log("[GoogleAuth] login() result:", JSON.stringify(result));
+
+            const idToken = "idToken" in result ? result.idToken : null;
+            console.log("[GoogleAuth] idToken present:", Boolean(idToken));
+            if (!idToken) {
+                throw new Error("Google did not return an ID token.");
+            }
+
+            console.log("[GoogleAuth] signIn() -> loginWithGoogle() (POST /auth/google)");
+            const user = await loginWithGoogle(idToken);
+            console.log("[GoogleAuth] backend exchange succeeded");
+            router.push(user.onboarding_completed ? "/dashboard" : "/onboarding");
+        } catch (err) {
+            // TEMP DEBUG — surfaces the real exception instead of a generic
+            // toast. Revert to the block below once the cause is confirmed:
+            //   const message = err instanceof ApiError ? err.detail : "Unable to continue with Google. Please try again.";
+            console.error("[GoogleAuth] signIn() FAILED — raw error:", err);
+            console.error("[GoogleAuth] signIn() FAILED — details:", describeError(err));
+            const message =
+                err instanceof ApiError
+                    ? err.detail
+                    : err instanceof Error
+                        ? err.message
+                        : describeError(err);
+            toast.error(message);
+        } finally {
+            setLoading(false);
+        }
+    }, [router, loginWithGoogle]);
+
+    return { signIn, loading, isConfigured: Boolean(GOOGLE_CLIENT_ID) };
 }

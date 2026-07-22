@@ -64,9 +64,15 @@ async function parseError(response: Response): Promise<never> {
 }
 
 async function postJson<TResponse>(path: string, body: unknown): Promise<TResponse> {
+    console.log("NEXT_PUBLIC_API_BASE_URL =", process.env.NEXT_PUBLIC_API_BASE_URL);
+    console.log("API_BASE_URL =", API_BASE_URL);
+    console.log("Request URL =", `${API_BASE_URL}${path}`);
+
     const response = await fetch(`${API_BASE_URL}${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+        },
         body: JSON.stringify(body),
     });
 

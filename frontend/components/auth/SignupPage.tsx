@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useEffect, FormEvent } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Mail, Globe, User as UserIcon, Loader2 } from "lucide-react";
+import { Mail, User as UserIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import SocialSignupButton from "./SocialSignupButton";
 import InputField from "./InputField";
@@ -12,16 +11,6 @@ import PasswordField from "./PasswordField";
 import { useAuth } from "@/features/auth/AuthContext";
 import { ApiError, EmailNotVerifiedError } from "@/features/auth/api";
 import { saveVerificationEmail } from "@/features/auth/emailVerification";
-import { useGoogleAuth } from "@/features/auth/useGoogleAuth";
-
-const GoogleLogo = (
-    <svg viewBox="0 0 533.5 544.3" className="h-5 w-5" aria-hidden>
-        <path fill="#4285f4" d="M533.5 278.4c0-18.5-1.6-36.2-4.6-53.4H272v100.9h146.9c-6.3 34-25.5 62.8-54.6 82v68h88.2c51.5-47.5 81-117.6 81-197.5z" />
-        <path fill="#34a853" d="M272 544.3c73.6 0 135.5-24.3 180.7-66.1l-88.2-68c-24.6 16.6-56 26.5-92.5 26.5-71 0-131.1-47.9-152.6-112.2H28.4v70.8C73.4 492.1 167.2 544.3 272 544.3z" />
-        <path fill="#fbbc04" d="M119.4 323.5c-10.8-32.3-10.8-66.9 0-99.2V153.5H28.4c-39.9 79.8-39.9 174.4 0 254.2l91-84.2z" />
-        <path fill="#ea4335" d="M272 107.7c39.8 0 75.7 13.7 104 40.7l78.1-78.1C408.2 24.2 345.7 0 272 0 167.2 0 73.4 52.2 28.4 153.5l91 70.8C140.9 155.6 201 107.7 272 107.7z" />
-    </svg>
-);
 
 type SignupPageProps = {
     onBack?: () => void;
@@ -30,7 +19,6 @@ type SignupPageProps = {
 export default function SignupPage({ onBack }: SignupPageProps) {
     const router = useRouter();
     const { register } = useAuth();
-    const googleAuth = useGoogleAuth();
 
     const [loading, setLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -167,27 +155,6 @@ export default function SignupPage({ onBack }: SignupPageProps) {
 
                         {!showForm ? (
                             <div className="space-y-3">
-                                <SocialSignupButton
-                                    label={googleAuth.loading ? "Continuing with Google..." : "Continue with Google"}
-                                    icon={GoogleLogo}
-                                    variant="primary"
-                                    onClick={googleAuth.signIn}
-                                    loading={googleAuth.loading}
-                                    ariaLabel="Continue with Google"
-                                />
-                                {/* Off-screen host for Google's real button — see useGoogleAuth. */}
-                                <div
-                                    id={googleAuth.containerId}
-                                    aria-hidden
-                                    className="pointer-events-none absolute -left-[9999px] top-0 opacity-0"
-                                />
-
-                                <div className="flex items-center justify-center py-2">
-                                    <div className="h-px w-full bg-slate-200" />
-                                    <span className="mx-3 text-xs text-slate-500">or</span>
-                                    <div className="h-px w-full bg-slate-200" />
-                                </div>
-
                                 <SocialSignupButton
                                     label={loading ? "Preparing email..." : "Continue with Email"}
                                     icon={Mail}

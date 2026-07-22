@@ -99,7 +99,7 @@ export default function RecentActivity() {
                             return (
                                 <li key={conversation.id} role="listitem">
                                     <Link
-                                        href={`/dashboard/history/${conversation.id}`}
+                                        href={`/dashboard/history/view?id=${conversation.id}`}
                                         className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 transition hover:border-slate-200 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                                         aria-label={`Conversation: ${practiceLabel}, ${statusLabel}, started ${formatHistoryDate(conversation.started_at)}`}
                                     >
