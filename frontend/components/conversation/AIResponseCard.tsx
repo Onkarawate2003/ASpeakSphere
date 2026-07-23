@@ -1,7 +1,16 @@
 "use client";
 
 import { memo, useMemo } from "react";
-import { Pause, Play, RotateCcw, Languages, Gauge, Sparkles } from "lucide-react";
+import {
+    Pause,
+    Play,
+    RotateCcw,
+    Languages,
+    Gauge,
+    Sparkles,
+    Volume2,
+    VolumeX,
+} from "lucide-react";
 
 import { useConversation } from "@/features/conversation/ConversationContext";
 import { useOptionalVoice } from "@/features/conversation/VoiceContext";
@@ -22,9 +31,12 @@ import type { PracticeType } from "@/features/conversation/types";
  * Responsibilities:
  *  - Show the newest AI message (or a friendly placeholder before the session
  *    starts / while Emma is composing her first reply).
- *  - Provide voice controls (Replay / Pause) that reuse the existing
- *    `useOptionalVoice()` TTS API — the exact same `speak` / `pause` / `resume`
- *    / `replay` functions already used by `ChatBubble`. No duplicate logic.
+ *  - Provide voice controls (Replay / Pause / Mute) that reuse the existing
+ *    `useOptionalVoice()` TTS API. Phase 2 content cleanup: this card is now
+ *    the SINGLE playback-control surface for the app — the duplicate
+ *    controls previously in `VoiceConversationPanel`, `VoiceMessageCard`,
+ *    and the per-message `ChatBubble` button were removed so there is one
+ *    obvious place to control Emma's voice.
  *  - Reserve future-placeholder controls (Translate, Slow playback) as
  *    disabled, clearly-labelled "coming soon" chips so the architecture is
  *    ready for Phase M15+ without wiring them up prematurely.
@@ -82,6 +94,8 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
     const pause = voice?.pause ?? (() => { });
     const resume = voice?.resume ?? (() => { });
     const replay = voice?.replay ?? (() => { });
+    const isMuted = voice?.isMuted ?? false;
+    const toggleMute = voice?.toggleMute ?? (() => { });
 
     const latestAi = useMemo(() => pickLatestAiMessage(messages), [messages]);
 
@@ -186,23 +200,40 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
 
             {/* Voice controls + future placeholders */}
             <footer className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-                {/* Primary voice control — Replay / Pause / Resume / Listen */}
+                {/* Primary voice control — Replay / Pause / Resume / Listen,
+                    plus Mute. This is the single playback-control surface
+                    for the app (Phase 2 content cleanup). */}
                 {ttsEnabled && !showPlaceholder && (
-                    <button
-                        type="button"
-                        onClick={handleVoiceControl}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 transition hover:bg-indigo-500 active:scale-95"
-                        aria-label={voiceButtonLabel}
-                    >
-                        {isThisPlaying ? (
-                            <Pause className="h-3.5 w-3.5" aria-hidden="true" />
-                        ) : isActiveMessage && isThisEnded ? (
-                            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                        ) : (
-                            <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                        )}
-                        {voiceButtonContent}
-                    </button>
+                    <>
+                        <button
+                            type="button"
+                            onClick={handleVoiceControl}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 transition hover:bg-indigo-500 active:scale-95"
+                            aria-label={voiceButtonLabel}
+                        >
+                            {isThisPlaying ? (
+                                <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+                            ) : isActiveMessage && isThisEnded ? (
+                                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                            ) : (
+                                <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                            )}
+                            {voiceButtonContent}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={toggleMute}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 ring-1 ring-inset ring-white/10 transition hover:bg-white/10 active:scale-95"
+                            aria-label={isMuted ? "Unmute Emma's voice" : "Mute Emma's voice"}
+                        >
+                            {isMuted ? (
+                                <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />
+                            ) : (
+                                <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            )}
+                            {isMuted ? "Unmute" : "Mute"}
+                        </button>
+                    </>
                 )}
 
                 {/* Future-placeholder controls — disabled, clearly "coming soon".

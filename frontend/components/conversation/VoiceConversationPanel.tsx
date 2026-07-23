@@ -1,21 +1,10 @@
 "use client";
 
-import {
-    Info,
-    Keyboard,
-    Pause,
-    Play,
-    RotateCcw,
-    Sparkles,
-    Volume2,
-    VolumeX,
-} from "lucide-react";
+import { Info, Keyboard, Sparkles } from "lucide-react";
 
 import { useConversation } from "@/features/conversation/ConversationContext";
 import { useVoice } from "@/features/conversation/VoiceContext";
 
-import MicrophoneButton from "@/components/conversation/MicrophoneButton";
-import RecordingTimer from "@/components/conversation/RecordingTimer";
 import VoiceWaveform from "@/components/conversation/VoiceWaveform";
 import SessionStatus, {
     useSessionStatusLabel,
@@ -27,11 +16,10 @@ const MAX_RECORDING_SECONDS = 30;
 /**
  * Voice Conversation Panel — Phase 11.5 Real-Time Voice Conversation.
  *
- * Replaces the previous frontend-only simulation with a real voice flow:
+ * Real voice flow (unchanged):
  *
  *   idle → recording → processing → aiSpeaking → idle
  *
- * Flow:
  *   1. Tap the microphone → `useAudioRecorder` (in `VoiceContext`) starts
  *      capturing audio from the microphone (with permission handling).
  *   2. Tap again (or wait for the cap) → recording stops, producing a Blob.
@@ -43,36 +31,20 @@ const MAX_RECORDING_SECONDS = 30;
  *   5. Emma's reply is auto-spoken by `VoiceProvider` (TTS) — the panel
  *      reflects the `aiSpeaking` state while audio plays.
  *
- * The recorder + transcription orchestration lives in `VoiceContext` so
- * that both this sidebar panel and the compact mic button in
- * `ConversationInput` share a single recording state machine (Part 10:
- * avoid duplicate logic). This component is now purely presentational —
- * it renders the shared `voiceState`, `recorderSeconds`, and
- * `handleMicClick` from `useVoice()`.
- *
- * Error handling (Part 7) is centralised in `VoiceContext`:
- *   - Microphone permission denied → toast + return to idle.
- *   - Empty/unintelligible speech → toast + return to idle.
- *   - STT/TTS API failures → toast + return to idle; the text pipeline is
- *     never broken.
- *
- * The panel is disabled before the session starts and after it ends.
+ * Phase 2 content cleanup:
+ * The microphone button, recording timer, and Pause/Replay/Mute playback
+ * row previously rendered here have been removed. `PremiumMicrophone`
+ * (main column) is now the single microphone entry point, and
+ * `AIResponseCard` (main column) is now the single playback-control
+ * surface. Both still read from the exact same shared `useVoice()` state —
+ * nothing about the recording/transcription/playback pipeline changed,
+ * only which component renders the controls for it. This panel keeps its
+ * unique content: the live waveform and the session-status badge/hint
+ * copy, so nothing here is shown twice elsewhere on the screen.
  */
 export default function VoiceConversationPanel() {
     const { status, isCompleted } = useConversation();
-    const {
-        voiceState,
-        recorderSeconds,
-        handleMicClick,
-        ttsEnabled,
-        playbackState,
-        isMuted,
-        activeMessageId,
-        pause,
-        resume,
-        replay,
-        toggleMute,
-    } = useVoice();
+    const { voiceState, ttsEnabled, playbackState } = useVoice();
 
     const sessionActive = status === "active";
     const sessionEnded = status === "ended" || isCompleted;
@@ -86,15 +58,6 @@ export default function VoiceConversationPanel() {
         isRecording ||
         voiceState === "aiSpeaking" ||
         playbackState === "loading";
-
-    // TTS playback controls are shown when audio is loaded for the active
-    // reply (playing/paused/ended) and TTS is enabled.
-    const showPlaybackControls =
-        ttsEnabled &&
-        activeMessageId !== null &&
-        (playbackState === "playing" ||
-            playbackState === "paused" ||
-            playbackState === "ended");
 
     return (
         <section
@@ -124,70 +87,6 @@ export default function VoiceConversationPanel() {
             <div className="rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
                 <VoiceWaveform isActive={waveformActive} />
             </div>
-
-            {/* Microphone + recording timer */}
-            <div className="flex flex-col items-center gap-3">
-                <MicrophoneButton
-                    state={voiceState}
-                    onClick={handleMicClick}
-                    disabled={micDisabled}
-                />
-                <RecordingTimer
-                    seconds={recorderSeconds}
-                    isActive={isRecording}
-                />
-            </div>
-
-            {/* TTS playback controls — play/pause/replay/mute for the
-                newest AI reply. Only shown when TTS is available and audio
-                is loaded. */}
-            {showPlaybackControls && (
-                <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2.5">
-                    {playbackState === "playing" ? (
-                        <button
-                            type="button"
-                            onClick={pause}
-                            className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-100"
-                            aria-label="Pause Emma's voice"
-                        >
-                            <Pause className="h-3.5 w-3.5" aria-hidden="true" />
-                            Pause
-                        </button>
-                    ) : (
-                        <button
-                            type="button"
-                            onClick={resume}
-                            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-700"
-                            aria-label="Play Emma's voice"
-                        >
-                            <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                            Play
-                        </button>
-                    )}
-                    <button
-                        type="button"
-                        onClick={replay}
-                        className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-100"
-                        aria-label="Replay Emma's voice"
-                    >
-                        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                        Replay
-                    </button>
-                    <button
-                        type="button"
-                        onClick={toggleMute}
-                        className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-100"
-                        aria-label={isMuted ? "Unmute voice" : "Mute voice"}
-                    >
-                        {isMuted ? (
-                            <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />
-                        ) : (
-                            <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        )}
-                        {isMuted ? "Unmute" : "Mute"}
-                    </button>
-                </div>
-            )}
 
             {/* Voice controls / hint section */}
             <div className="space-y-3 border-t border-slate-100 pt-4">

@@ -457,57 +457,91 @@ body {
   }
 }
 
+/* Phase 7A — smooth state-swap handoff. When the active `.spk-ava-*`
+   class changes (e.g. listening → thinking), the element's computed
+   transform/opacity can jump between the old animation's last frame and
+   the new one's starting frame. This short, compositor-friendly
+   transition (well under 250ms) bridges that jump so the swap reads as a
+   soft handoff instead of a snap. It does not change which keyframes run
+   and adds no delay before the new state's own animation begins — the
+   `animation-delay: 0s` default on every primary rhythm above is
+   preserved. The mouth overlay keeps its own dedicated transition further
+   up and is intentionally excluded here. */
+#ava-head,
+#ava-eyes,
+#ava-brows,
+#ava-glow {
+  transition: transform 200ms ease-out, opacity 200ms ease-out;
+}
+
 /* ---- State profiles ----
    Each .spk-ava-* class wires the relevant keyframes to the
    matching SVG sub-groups. Animations are GPU-friendly
-   (transform/opacity only). */
+   (transform/opacity only).
+
+   Phase 7A — Hero Portrait Polish:
+   The idle/listening/thinking/speaking breathing-rhythm durations below
+   are unified with TutorPortrait's matching state durations (see the
+   Tutor Portrait section further down) so the small avatar and the large
+   hero portrait read as the same character's rhythm. Secondary layers
+   (blink/brow/glow) keep their own durations but get a small, fixed
+   `animation-delay` so they don't start in perfect lockstep with the
+   primary rhythm — deterministic micro-variation, not randomness; the
+   primary rhythm animation itself always starts with no delay. LOADING is
+   intentionally left matching THINKING's new value (unchanged
+   relationship — the existing design already treats loading as visually
+   identical to thinking). Mouth-talk timing (speech-rate simulation) is
+   untouched. */
 
 /* IDLE — gentle breathing + occasional blink + faint sway */
 .spk-ava-idle #ava-head {
-  animation: spk-ava-breathe 4s ease-in-out infinite,
-    spk-ava-sway 9s ease-in-out infinite;
+  animation: spk-ava-breathe 5s ease-in-out infinite,
+    spk-ava-sway 9s ease-in-out infinite 1.5s;
 }
 
 .spk-ava-idle #ava-eyes {
-  animation: spk-ava-blink 5s ease-in-out infinite;
+  animation: spk-ava-blink 5s ease-in-out infinite 0.6s;
 }
 
 .spk-ava-idle #ava-glow {
-  animation: spk-ava-softpulse 4s ease-in-out infinite;
+  animation: spk-ava-softpulse 4s ease-in-out infinite 0.3s;
 }
 
-/* LISTENING — attentive tilt + brow raise + faster blink */
+/* LISTENING — attentive tilt + brow raise + faster blink.
+   Rhythm (4s) already matched the portrait's listening rhythm — unchanged. */
 .spk-ava-listening #ava-head {
   animation: spk-ava-sway 4s ease-in-out infinite;
   transform-origin: center bottom;
 }
 
 .spk-ava-listening #ava-brows {
-  animation: spk-ava-brow 2s ease-in-out infinite;
+  animation: spk-ava-brow 2s ease-in-out infinite 0.25s;
 }
 
 .spk-ava-listening #ava-eyes {
-  animation: spk-ava-blink 3s ease-in-out infinite;
+  animation: spk-ava-blink 3s ease-in-out infinite 0.5s;
 }
 
 .spk-ava-listening #ava-glow {
-  animation: spk-ava-softpulse 2.5s ease-in-out infinite;
+  animation: spk-ava-softpulse 2.5s ease-in-out infinite 0.2s;
 }
 
-/* THINKING — subtle look-up + slow blink */
+/* THINKING — subtle look-up + slow blink. Rhythm unified to 3.2s. */
 .spk-ava-thinking #ava-head {
-  animation: spk-ava-lookup 3s ease-in-out infinite;
+  animation: spk-ava-lookup 3.2s ease-in-out infinite;
 }
 
 .spk-ava-thinking #ava-eyes {
-  animation: spk-ava-blink 4s ease-in-out infinite;
+  animation: spk-ava-blink 4s ease-in-out infinite 0.4s;
 }
 
 .spk-ava-thinking #ava-glow {
-  animation: spk-ava-softpulse 3s ease-in-out infinite;
+  animation: spk-ava-softpulse 3s ease-in-out infinite 0.3s;
 }
 
-/* LOADING — soft breathing pulse (no mouth movement) */
+/* LOADING — soft breathing pulse (no mouth movement). Kept matching
+   THINKING's rhythm, preserving the existing "loading looks like
+   thinking" relationship. */
 .spk-ava-loading #ava-head {
   animation: spk-ava-breathe 2s ease-in-out infinite;
 }
@@ -518,17 +552,19 @@ body {
 
 /* SPEAKING — mouth talks + blink + halo + gentle breathe.
    This is the speech-synced state: runs only while real audio
-   is playing. Mouth overlay animates open/close. */
+   is playing. Mouth overlay animates open/close (timing untouched —
+   it simulates syllable rate, not a state "rhythm"). Breathing rhythm
+   unified to 2.8s. */
 .spk-ava-speaking #ava-head {
-  animation: spk-ava-breathe 3s ease-in-out infinite;
+  animation: spk-ava-breathe 2.8s ease-in-out infinite;
 }
 
 .spk-ava-speaking #ava-eyes {
-  animation: spk-ava-blink 4s ease-in-out infinite;
+  animation: spk-ava-blink 4s ease-in-out infinite 0.4s;
 }
 
 .spk-ava-speaking #ava-glow {
-  animation: spk-ava-halo 1.4s ease-in-out infinite;
+  animation: spk-ava-halo 1.4s ease-in-out infinite 0.2s;
 }
 
 /* The closed-mouth stroke fades out while talking so the open
@@ -593,6 +629,16 @@ body {
   .spk-ava-error #ava-head,
   .spk-ava-error #ava-glow {
     animation: none;
+  }
+
+  /* Phase 7A — the state-swap handoff transition is also motion and must
+     be fully disabled under reduced motion, not just the keyframe
+     animations above. */
+  #ava-head,
+  #ava-eyes,
+  #ava-brows,
+  #ava-glow {
+    transition: none;
   }
 
   /* Keep the closed-mouth smile visible under reduced motion. */
@@ -719,50 +765,78 @@ body {
   will-change: transform;
 }
 
+/* Phase 7A — smooth state-swap handoff. When the active `.spk-portrait--*`
+   class changes (e.g. listening → thinking), the computed transform/
+   box-shadow can jump between the old animation's last frame and the new
+   one's starting frame. This short, compositor-friendly transition (well
+   under 250ms) bridges that jump so the swap reads as a soft handoff
+   instead of a snap. It does not change which keyframes run and adds no
+   delay before the new state's own breathing rhythm begins. */
+.spk-portrait,
+.spk-portrait__img {
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+}
+
+/* Phase 7A — Hero Portrait Polish: the idle/listening/thinking/speaking
+   breathing-rhythm durations below are unified with AnimatedTutorAvatar's
+   matching state durations (see the avatar section above) so the small
+   avatar and the large hero portrait read as the same character's
+   rhythm. The wrapper-level accent animations (tilt/ring/shimmer/glow)
+   keep their own durations but get a small, fixed `animation-delay` so
+   they don't start in perfect lockstep with the breathing rhythm —
+   deterministic micro-variation, matching the avatar's own stagger
+   pattern. The breathing rhythm itself always starts with no delay.
+   LOADING is intentionally left matching THINKING's new value
+   (preserves the existing "loading looks like thinking" relationship). */
+
 /* Idle — breathing + floating + gentle tilt layered on the image. */
 .spk-portrait--idle .spk-portrait__img {
-  animation: spk-portrait-breathe 5.5s ease-in-out infinite,
-    spk-portrait-tilt 9s ease-in-out infinite;
+  animation: spk-portrait-breathe 5s ease-in-out infinite,
+    spk-portrait-tilt 9s ease-in-out infinite 1.5s;
 }
 
 .spk-portrait--idle {
-  animation: spk-portrait-float 6s ease-in-out infinite;
+  animation: spk-portrait-float 6s ease-in-out infinite 0.3s;
 }
 
-/* Listening — green listen-ring on the wrapper, image keeps breathing. */
+/* Listening — green listen-ring on the wrapper, image keeps breathing.
+   Rhythm (4s) already matched the avatar's listening rhythm — unchanged. */
 .spk-portrait--listening {
-  animation: spk-portrait-listen-ring 1.8s ease-out infinite;
+  animation: spk-portrait-listen-ring 1.8s ease-out infinite 0.2s;
 }
 
 .spk-portrait--listening .spk-portrait__img {
   animation: spk-portrait-breathe 4s ease-in-out infinite;
 }
 
-/* Thinking — purple shimmer halo, image breathing slightly faster. */
+/* Thinking — purple shimmer halo, image breathing slightly faster.
+   Rhythm unified to 3.2s. */
 .spk-portrait--thinking {
-  animation: spk-portrait-think-shimmer 2.4s ease-in-out infinite;
+  animation: spk-portrait-think-shimmer 2.4s ease-in-out infinite 0.4s;
 }
 
 .spk-portrait--thinking .spk-portrait__img {
-  animation: spk-portrait-breathe 3.4s ease-in-out infinite;
+  animation: spk-portrait-breathe 3.2s ease-in-out infinite;
 }
 
-/* Loading — same as thinking (waiting on network). */
+/* Loading — same as thinking (waiting on network). Kept matching
+   THINKING's rhythm. */
 .spk-portrait--loading {
-  animation: spk-portrait-think-shimmer 2.4s ease-in-out infinite;
+  animation: spk-portrait-think-shimmer 2.4s ease-in-out infinite 0.4s;
 }
 
 .spk-portrait--loading .spk-portrait__img {
-  animation: spk-portrait-breathe 3.4s ease-in-out infinite;
+  animation: spk-portrait-breathe 3.2s ease-in-out infinite;
 }
 
-/* Speaking — warm indigo glow halo, image breathing faster (speech cadence). */
+/* Speaking — warm indigo glow halo, image breathing faster (speech
+   cadence). Rhythm unified to 2.8s. */
 .spk-portrait--speaking {
-  animation: spk-portrait-glow 1.6s ease-in-out infinite;
+  animation: spk-portrait-glow 1.6s ease-in-out infinite 0.2s;
 }
 
 .spk-portrait--speaking .spk-portrait__img {
-  animation: spk-portrait-breathe 2.6s ease-in-out infinite;
+  animation: spk-portrait-breathe 2.8s ease-in-out infinite;
 }
 
 /* Paused — frozen, no animation (mouth/visual at rest). */
@@ -793,6 +867,14 @@ body {
   .spk-portrait--speaking,
   .spk-portrait--speaking .spk-portrait__img {
     animation: none;
+  }
+
+  /* Phase 7A — the state-swap handoff transition is also motion and must
+     be fully disabled under reduced motion, not just the keyframe
+     animations above. */
+  .spk-portrait,
+  .spk-portrait__img {
+    transition: none;
   }
 }
 

@@ -10,20 +10,18 @@ import { ConversationProvider } from "@/features/conversation/ConversationContex
 import { VoiceProvider } from "@/features/conversation/VoiceContext";
 import type { PracticeType } from "@/features/conversation/types";
 import { getLessonById } from "@/features/conversation/lessonsData";
+import ConversationWorkspace from "@/components/conversation/ConversationWorkspace";
 import ConversationHeader from "@/components/conversation/ConversationHeader";
 import TutorPortrait from "@/components/conversation/TutorPortrait";
 import AIResponseCard from "@/components/conversation/AIResponseCard";
-import PremiumMicrophone from "@/components/conversation/PremiumMicrophone";
 import WelcomeConversation from "@/components/conversation/WelcomeConversation";
 import ChatWindow from "@/components/conversation/ChatWindow";
 import ConversationInput from "@/components/conversation/ConversationInput";
 import ConversationSidebar from "@/components/conversation/ConversationSidebar";
 import SessionControls from "@/components/conversation/SessionControls";
 import ConversationComplete from "@/components/conversation/ConversationComplete";
-import VoiceConversationPanel from "@/components/conversation/VoiceConversationPanel";
 import SpeakingScore from "@/components/conversation/SpeakingScore";
 import ConversationTimeline from "@/components/conversation/ConversationTimeline";
-import VoiceMessageCard from "@/components/conversation/VoiceMessageCard";
 import { useConversation } from "@/features/conversation/ConversationContext";
 
 const VALID_PRACTICE_TYPES = new Set(
@@ -35,13 +33,26 @@ const VALID_PRACTICE_TYPES = new Set(
  * Every component here is rendered INSIDE <ConversationProvider>, so all
  * useConversation() calls are valid. The header is sticky at the top and
  * the rest of the layout sits below it.
+ *
+ * Phase 1 — Focused Conversation Workspace:
+ * The surrounding layout chrome is chosen here, based on `status`, because
+ * `status` only exists inside ConversationContext. While a session is
+ * active (`status === "active"`) the dashboard Sidebar/TopNavbar are
+ * replaced by the chrome-free `ConversationWorkspace` so the conversation
+ * occupies the full viewport; before a session starts and after it ends,
+ * `DashboardLayout` is used exactly as before. Because this choice lives
+ * inside the provider tree (not around it), ConversationProvider and
+ * VoiceProvider stay mounted continuously across the switch — no state is
+ * reset and no existing behaviour changes, only the surrounding chrome.
  */
 function ConversationContent() {
-    const { status } = useConversation();
+    const { status, isCompleted } = useConversation();
     const isActive = status !== "idle";
 
+    const Layout = status === "active" ? ConversationWorkspace : DashboardLayout;
+
     return (
-        <>
+        <Layout>
             <ConversationHeader />
             <div className="px-4 py-6 sm:px-6 lg:px-8">
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -50,12 +61,23 @@ function ConversationContent() {
                         visual focus. The column flows top → bottom:
                           1. Tutor Area   — large portrait + AI status badge
                           2. AI Response  — premium latest-response card + voice controls
-                          3. Transcript   — scrollable chat (welcome state OR live)
-                          4. Microphone   — large floating primary interaction element
-                          5. Controls     — restart / end session
-                          6. Completion   — summary / rating / export (self-gated)
-                        All existing components are preserved and reused; only the
-                        layout composition changes. */}
+                          3. Transcript   — scrollable chat, with the unified
+                                            mic + text + send input bar docked
+                                            to it (welcome state OR live)
+                          4. Controls     — restart / end session
+                          5. Completion   — summary / rating / export (self-gated)
+
+                        Phase 3 — Voice Interaction Redesign: the standalone
+                        "Premium floating microphone" section that used to sit
+                        here was removed. ConversationInput is now the single
+                        interaction area for both typing and voice — it
+                        already renders directly below the transcript inside
+                        section 3, so no replacement section is needed. The
+                        recording logic itself is untouched: ConversationInput
+                        now consumes the exact same `useVoice()` state
+                        (`voiceState`, `handleMicClick`, `recorderSeconds`,
+                        `isRecorderSupported`) that PremiumMicrophone used to
+                        expose on its own. */}
                     <div className="flex min-w-0 flex-col gap-6">
                         {/* 1 + 2 — Tutor Area + AI Response Card, fused into a
                             single premium hero panel so the portrait and the
@@ -93,38 +115,51 @@ function ConversationContent() {
                             {isActive && <ConversationInput />}
                         </section>
 
-                        {/* 4 — Premium floating microphone (primary interaction). */}
-                        <section className="flex flex-col items-center gap-3 rounded-3xl border border-slate-200 bg-white/70 p-5 shadow-sm backdrop-blur-sm sm:p-6">
-                            <PremiumMicrophone />
-                        </section>
-
-                        {/* 5 — Restart / End session controls. */}
+                        {/* 4 — Restart / End session controls. */}
                         <SessionControls />
 
-                        {/* 6 — Completion experience — self-gates on isCompleted
+                        {/* 5 — Completion experience — self-gates on isCompleted
                             so it renders nothing until the practice is done.
                             Composes the summary card, rating, export/copy, and
                             follow-up actions. */}
                         <ConversationComplete />
                     </div>
 
-                    {/* ── Sidebar — preserved unchanged ─────────────────────────
-                        Stacks below the chat on tablet & mobile. Voice panel +
-                        speaking scores + timeline live alongside the chat on
-                        desktop, and stack vertically on smaller screens. The
-                        `space-y-6` matches the grid's gap rhythm. */}
+                    {/* ── Sidebar ────────────────────────────────────────────────
+                        Stacks below the chat on tablet & mobile. The
+                        `space-y-6` matches the grid's gap rhythm.
+
+                        Phase 2 content cleanup — SpeakingScore and
+                        ConversationTimeline are recap content: they now only
+                        render once the session is completed (`isCompleted`),
+                        instead of showing empty placeholders before/during
+                        the conversation. VoiceMessageCard was removed
+                        entirely — its playback controls duplicated
+                        AIResponseCard, which is now the single playback
+                        surface. No completion functionality changed; these
+                        two cards render exactly as before once `isCompleted`
+                        is true.
+
+                        Phase 3 — Voice Interaction Redesign: VoiceConversationPanel
+                        was removed entirely (no replacement card). Its only
+                        unique content, the live waveform, is now shown inside
+                        ConversationInput's recording state; its status badge
+                        and hint copy were redundant with information shown
+                        elsewhere (TutorPortrait's live-status badge). */}
                     <div className="min-w-0">
                         <div className="space-y-6">
-                            <VoiceConversationPanel />
-                            <SpeakingScore />
-                            <ConversationTimeline />
-                            <VoiceMessageCard />
+                            {isCompleted && (
+                                <>
+                                    <SpeakingScore />
+                                    <ConversationTimeline />
+                                </>
+                            )}
                             <ConversationSidebar />
                         </div>
                     </div>
                 </div>
             </div>
-        </>
+        </Layout>
     );
 }
 
@@ -142,31 +177,38 @@ export default function ConversationPage() {
     const lessonId = searchParams.get("lesson");
     const lesson = lessonId ? getLessonById(lessonId) : undefined;
 
-    return (
+    // Phase 1 — Focused Conversation Workspace:
+    // DashboardLayout no longer wraps this whole page unconditionally. The
+    // valid-practice branch hands layout selection to <ConversationContent>,
+    // which switches between DashboardLayout and ConversationWorkspace based
+    // on `status` (read from ConversationContext). The invalid-practice
+    // fallback has no session/status to react to, so it keeps using
+    // DashboardLayout directly, exactly as before.
+    return isValid ? (
+        <ConversationProvider
+            practiceType={practiceType}
+            lessonId={lesson?.id ?? null}
+            lessonTitle={lesson?.title ?? null}
+            lessonObjectives={lesson?.objectives ?? null}
+        >
+            {/* Phase 11.5 — VoiceProvider wraps the conversation
+                content so the TTS playback state (auto-play of the
+                newest AI reply, play/pause/replay/mute) and the shared
+                recording state machine are available to every consumer —
+                today that's AIResponseCard (playback) and
+                ConversationInput (recording/mic), per the Phase 2/3
+                content cleanups. Must be nested inside ConversationProvider
+                because it consumes useConversation() to watch the isTyping
+                transition. */}
+            <VoiceProvider>
+                <ConversationContent />
+            </VoiceProvider>
+        </ConversationProvider>
+    ) : (
         <DashboardLayout>
-            {isValid ? (
-                <ConversationProvider
-                    practiceType={practiceType}
-                    lessonId={lesson?.id ?? null}
-                    lessonTitle={lesson?.title ?? null}
-                    lessonObjectives={lesson?.objectives ?? null}
-                >
-                    {/* Phase 11.5 — VoiceProvider wraps the conversation
-                        content so the TTS playback state (auto-play of the
-                        newest AI reply, play/pause/replay/mute) is shared
-                        between the sidebar VoiceConversationPanel and the
-                        main-area ChatBubble/VoiceMessageCard. Must be nested
-                        inside ConversationProvider because it consumes
-                        useConversation() to watch the isTyping transition. */}
-                    <VoiceProvider>
-                        <ConversationContent />
-                    </VoiceProvider>
-                </ConversationProvider>
-            ) : (
-                <div className="px-4 py-6 sm:px-6 lg:px-8">
-                    <InvalidPracticeState />
-                </div>
-            )}
+            <div className="px-4 py-6 sm:px-6 lg:px-8">
+                <InvalidPracticeState />
+            </div>
         </DashboardLayout>
     );
 }

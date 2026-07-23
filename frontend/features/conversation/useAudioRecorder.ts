@@ -277,6 +277,17 @@ export function useAudioRecorder(maxSeconds: number): AudioRecorderResult {
                 streamRef.current = null;
             }
             setState("idle");
+            // Bug fix: this branch previously left `mediaRecorderRef.current`
+            // pointing at the now-inactive recorder. The next `startRecording()`
+            // call's `if (mediaRecorderRef.current) return;` guard would then
+            // silently no-op, since it only exists to prevent double-starting
+            // an in-progress recording. Clearing it here — after `.stop()` has
+            // already been called — matches the "already inactive" branch
+            // above and lets the next start proceed normally. The local
+            // `recorder` variable (captured above) is unaffected, so the
+            // pending `onstop` callback still builds and resolves the blob
+            // exactly as before.
+            mediaRecorderRef.current = null;
         });
     }, [clearTimer]);
 

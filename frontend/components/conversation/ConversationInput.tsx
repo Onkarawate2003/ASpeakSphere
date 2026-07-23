@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
-import { Mic, SendHorizontal, Square } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Loader2, Mic, SendHorizontal, Square, Volume2 } from "lucide-react";
 import { useConversation } from "@/features/conversation/ConversationContext";
 import { useVoice } from "@/features/conversation/VoiceContext";
 import {
@@ -9,31 +9,94 @@ import {
     PRACTICE_INPUT_PLACEHOLDERS,
 } from "@/features/conversation/constants";
 import type { PracticeType } from "@/features/conversation/types";
+import type { VoiceState } from "@/components/conversation/MicrophoneButton";
+import VoiceWaveform from "@/components/conversation/VoiceWaveform";
 
 /**
- * Sticky bottom input bar.
- * - Auto-resizing textarea + a mic button + a send button.
- * - Enter sends the message; Shift+Enter inserts a newline.
- * - Empty/whitespace messages are blocked.
- * - Input clears (and resets height) after sending.
+ * Per-voice-state mic button styling. Mirrors the state → visual mapping
+ * that used to live in the standalone `PremiumMicrophone` component (icon,
+ * color, interactivity per state) — the mapping moved here, the underlying
+ * `useVoice()` state it reads did not change at all.
+ */
+type MicStateConfig = {
+    icon: typeof Mic;
+    baseClass: string;
+    iconClass: string;
+    label: string;
+    /** Whether the button is clickable in this state. */
+    interactive: boolean;
+};
+
+const MIC_STATE_CONFIG: Record<VoiceState, MicStateConfig> = {
+    idle: {
+        icon: Mic,
+        baseClass: "bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/25",
+        iconClass: "text-white",
+        label: "Start voice recording",
+        interactive: true,
+    },
+    recording: {
+        icon: Square,
+        baseClass: "bg-red-500 shadow-md shadow-red-500/30",
+        iconClass: "text-white fill-current",
+        label: "Stop recording and send",
+        interactive: true,
+    },
+    processing: {
+        icon: Loader2,
+        baseClass: "bg-amber-500 shadow-md shadow-amber-500/25",
+        iconClass: "text-white animate-spin",
+        label: "Processing your speech",
+        interactive: false,
+    },
+    aiSpeaking: {
+        icon: Volume2,
+        baseClass: "bg-slate-400",
+        iconClass: "text-white",
+        label: "Emma is speaking — please wait",
+        interactive: false,
+    },
+};
+
+/**
+ * Single interaction bar — Phase 3 Voice Interaction Redesign.
  *
- * Phase 11.5 — Real-Time Voice Conversation:
- * - The mic button is now wired to the real voice flow via `useVoice()`.
- *   Tapping it starts recording (Groq Whisper STT); tapping again stops,
- *   transcribes, and inserts the transcript into the existing conversation
- *   pipeline exactly as if the learner typed it.
- * - The recorder + transcription state machine lives in `VoiceContext` and
- *   is shared with the sidebar `VoiceConversationPanel`, so there is no
- *   duplicate logic (Part 10). This compact button is a second entry point
- *   to the same shared flow.
- * - The button is disabled while Emma is typing/processing, once the
- *   session is completed, or when the browser does not support audio
- *   recording. Typing always remains available as a fallback (Part 7).
+ * This bar is now the ONLY interaction area for the conversation: typing
+ * and voice both live here. It replaces the previous split between a
+ * standalone `PremiumMicrophone` section and this text-only input.
  *
- * Phase 3:
- * - The input is disabled while Emma is typing and once the session is
- *   completed, preventing duplicate sends and post-completion messages.
- * - The placeholder adapts to these states for clear UX feedback.
+ * Three visual states, driven entirely by the existing `voiceState` from
+ * `useVoice()` — no new state, no changed business logic:
+ *
+ *  - idle / aiSpeaking → mic button + textarea + send button (unchanged
+ *    typing behaviour; the mic button's color/interactivity reflects
+ *    whichever of the two states is active).
+ *  - recording         → mic button (now acting as "stop") + VoiceWaveform
+ *                        + "Listening..." IN PLACE OF the textarea. The
+ *                        send button is hidden — there is nothing to send
+ *                        by hand while recording.
+ *  - processing        → the whole bar becomes a single "Processing your
+ *                        speech..." status line, matching the approved
+ *                        target design.
+ *
+ * Voice pipeline (UNCHANGED — this is a presentation-only relocation):
+ * tapping the mic calls the exact same `handleMicClick` from `VoiceContext`
+ * that `PremiumMicrophone` used to call. Recording → transcription →
+ * `sendMessage(transcript)` all happen inside `VoiceContext`, exactly as
+ * before. The recognized transcript is NEVER assigned to this component's
+ * `value` state — there is no code path here that touches `value` from the
+ * voice flow, so the automatic-send behaviour is preserved exactly.
+ *
+ * Typing (UNCHANGED): Enter sends, Shift+Enter inserts a newline, empty/
+ * whitespace messages are blocked, the textarea auto-resizes and clears
+ * after sending — none of this logic changed.
+ *
+ * Accessibility: the mic button carries a per-state `aria-label` (mirroring
+ * `PremiumMicrophone`'s previous labels), and a `useEffect` restores focus
+ * to the mic button if it was lost when the recording/processing UI
+ * unmounted the textarea (see `wasBusyRef` below) — the only new logic in
+ * this file exists to prevent a focus-loss regression, not to change any
+ * conversation/voice behaviour.
  */
 export default function ConversationInput() {
     const { sendMessage, status, practiceType, isTyping, isCompleted, isLoading } =
@@ -41,6 +104,7 @@ export default function ConversationInput() {
     const { voiceState, handleMicClick, isRecorderSupported } = useVoice();
     const [value, setValue] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const micButtonRef = useRef<HTMLButtonElement | null>(null);
 
     const isActive = status === "active";
     // Block sending while Emma is typing, the session is completed, or a backend request is in flight.
@@ -48,20 +112,42 @@ export default function ConversationInput() {
     const canSend = isActive && !isLocked && value.trim().length > 0;
 
     const isRecording = voiceState === "recording";
-    const isVoiceBusy = voiceState === "processing" || voiceState === "aiSpeaking";
-    const micDisabled = !isActive || isLocked || isVoiceBusy || !isRecorderSupported;
+    const isProcessing = voiceState === "processing";
+    const micConfig = MIC_STATE_CONFIG[voiceState];
+    const MicIcon = micConfig.icon;
+    const micDisabled =
+        !isActive || isLocked || !isRecorderSupported || !micConfig.interactive;
 
-    const placeholder = isRecording
-        ? "Recording… tap the mic to stop and send."
-        : !isActive
-            ? DEFAULT_INPUT_PLACEHOLDER
-            : isCompleted
-                ? "Practice completed — start a new session to continue."
-                : isTyping
-                    ? "Emma is typing…"
-                    : practiceType
-                        ? PRACTICE_INPUT_PLACEHOLDERS[practiceType as PracticeType]
-                        : DEFAULT_INPUT_PLACEHOLDER;
+    const placeholder = !isActive
+        ? DEFAULT_INPUT_PLACEHOLDER
+        : isCompleted
+            ? "Practice completed — start a new session to continue."
+            : isTyping
+                ? "Emma is typing…"
+                : practiceType
+                    ? PRACTICE_INPUT_PLACEHOLDERS[practiceType as PracticeType]
+                    : DEFAULT_INPUT_PLACEHOLDER;
+
+    // Accessibility safeguard: the textarea (and, during processing, the mic
+    // button too) unmount while recording/processing. If a screen reader or
+    // keyboard user had focus on one of those elements, unmounting drops
+    // focus to <body>. When we return to idle, restore focus to the mic
+    // button (which is always present in the idle/aiSpeaking layout) rather
+    // than leaving focus lost. This does not change any voice/recording
+    // behaviour — it only restores where keyboard focus lands.
+    const wasBusyRef = useRef(false);
+    useEffect(() => {
+        const isBusy = isRecording || isProcessing;
+        if (wasBusyRef.current && !isBusy) {
+            if (
+                typeof document !== "undefined" &&
+                document.activeElement === document.body
+            ) {
+                micButtonRef.current?.focus();
+            }
+        }
+        wasBusyRef.current = isBusy;
+    }, [isRecording, isProcessing]);
 
     /** Reset the textarea height back to its single-line baseline. */
     const resetHeight = () => {
@@ -101,57 +187,92 @@ export default function ConversationInput() {
         }
     };
 
+    if (isProcessing) {
+        return (
+            <div className="border-t border-slate-200 bg-white/85 px-3 py-3 backdrop-blur-sm sm:px-4">
+                <p
+                    className="flex h-11 items-center justify-center gap-2 text-sm font-semibold text-slate-500"
+                    role="status"
+                    aria-live="polite"
+                >
+                    <Loader2
+                        className="h-4 w-4 animate-spin text-amber-500"
+                        aria-hidden="true"
+                    />
+                    Processing your speech…
+                </p>
+            </div>
+        );
+    }
+
     return (
         <div className="border-t border-slate-200 bg-white/85 px-3 py-3 backdrop-blur-sm sm:px-4">
             <div className="flex items-end gap-2 sm:gap-3">
-                {/* Mic button — Phase 11.5 real voice flow. Shares the
-                    recorder state machine in VoiceContext with the sidebar
-                    VoiceConversationPanel. Disabled while the session is
-                    inactive, Emma is typing/processing, or the browser
-                    lacks recording support. */}
+                {/* Mic button — single microphone entry point for the app
+                    (Phase 3). Shares the exact same handleMicClick / voiceState
+                    from VoiceContext that PremiumMicrophone used to render. */}
                 <button
                     type="button"
-                    onClick={handleMicClick}
+                    ref={micButtonRef}
+                    onClick={micDisabled ? undefined : handleMicClick}
                     disabled={micDisabled}
-                    aria-label={
-                        isRecording ? "Stop recording and send" : "Start voice recording"
-                    }
+                    aria-label={micConfig.label}
+                    aria-pressed={isRecording}
                     title={isRecording ? "Tap to stop and send" : "Voice input"}
-                    className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border transition active:scale-95 ${isRecording
-                            ? "border-red-300 bg-red-500 text-white shadow-md shadow-red-500/30"
-                            : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-500"
-                        } ${micDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                    className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl transition active:scale-95 ${micConfig.baseClass} ${micDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:scale-105"}`}
                 >
-                    {isRecording ? (
-                        <Square className="h-4 w-4 fill-current" />
-                    ) : (
-                        <Mic className="h-5 w-5" />
-                    )}
+                    <MicIcon className={`h-5 w-5 ${micConfig.iconClass}`} aria-hidden="true" />
                 </button>
 
-                {/* Auto-resizing textarea */}
-                <textarea
-                    ref={textareaRef}
-                    value={value}
-                    onChange={handleChange}
-                    onKeyDown={handleKeyDown}
-                    rows={1}
-                    placeholder={placeholder}
-                    disabled={!isActive || isLocked}
-                    aria-label="Type your message"
-                    className="max-h-40 min-h-[2.75rem] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm leading-relaxed text-slate-800 placeholder:text-slate-400 transition focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/15 disabled:cursor-not-allowed disabled:opacity-70"
-                />
+                {isRecording ? (
+                    /* Recording UI — replaces ONLY the textarea area with the
+                       waveform + "Listening...". The send button is hidden;
+                       there is nothing to send by hand while recording. The
+                       waveform is the existing VoiceWaveform component,
+                       unmodified, with a smaller bar count sized for this
+                       compact bar instead of the full-width sidebar card it
+                       used to live in. */
+                    <div
+                        className="flex h-11 min-w-0 flex-1 items-center gap-3 overflow-hidden rounded-2xl border border-red-200 bg-red-50/60 px-3"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                            <VoiceWaveform isActive bars={16} />
+                        </div>
+                        <span className="flex-shrink-0 text-sm font-bold text-red-600">
+                            Listening...
+                        </span>
+                    </div>
+                ) : (
+                    <>
+                        {/* Auto-resizing textarea — typing is completely
+                            unchanged: Enter sends, Shift+Enter inserts a
+                            newline, empty/whitespace messages are blocked. */}
+                        <textarea
+                            ref={textareaRef}
+                            value={value}
+                            onChange={handleChange}
+                            onKeyDown={handleKeyDown}
+                            rows={1}
+                            placeholder={placeholder}
+                            disabled={!isActive || isLocked}
+                            aria-label="Type your message"
+                            className="max-h-40 min-h-[2.75rem] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm leading-relaxed text-slate-800 placeholder:text-slate-400 transition focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/15 disabled:cursor-not-allowed disabled:opacity-70"
+                        />
 
-                {/* Send button */}
-                <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={!canSend}
-                    aria-label="Send message"
-                    className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-600/30 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
-                >
-                    <SendHorizontal className="h-5 w-5" />
-                </button>
+                        {/* Send button */}
+                        <button
+                            type="button"
+                            onClick={handleSend}
+                            disabled={!canSend}
+                            aria-label="Send message"
+                            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-600/30 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                        >
+                            <SendHorizontal className="h-5 w-5" />
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );
