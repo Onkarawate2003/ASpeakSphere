@@ -23,6 +23,7 @@ from app.api.v1 import (  # noqa: E402
     quizzes,
     speech,
     stats,
+    translation,
 )
 from app.database import Base, engine  # noqa: E402
 from app.migrations import (  # noqa: E402
@@ -130,6 +131,11 @@ app.include_router(speech.router, prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api")
 # Module M12 — Statistics Dashboard: range-scoped XP/session/category analytics.
 app.include_router(stats.router, prefix="/api/v1")
+# AI Conversation Translation feature — on-demand, stateless text
+# translation of an existing AI reply (Groq-based, isolated from
+# speech.py/conversations.py). Mounted under /api/v1 alongside the other
+# authenticated feature routers.
+app.include_router(translation.router, prefix="/api/v1")
 
 from fastapi import Depends
 from sqlalchemy.orm import Session

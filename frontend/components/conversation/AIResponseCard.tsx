@@ -1,22 +1,26 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import {
     Pause,
     Play,
     RotateCcw,
     Languages,
+    Loader2,
     Gauge,
     Sparkles,
     Volume2,
     VolumeX,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { useConversation } from "@/features/conversation/ConversationContext";
 import { useOptionalVoice } from "@/features/conversation/VoiceContext";
 import { TUTOR_NAME } from "@/features/conversation/constants";
 import { PRACTICE_WELCOME_MESSAGES } from "@/features/conversation/constants";
 import type { PracticeType } from "@/features/conversation/types";
+import { translateText } from "@/features/conversation/translationApi";
+import { ApiError } from "@/features/auth/api";
 
 /**
  * Phase M14 Enhancement — AIResponseCard.
@@ -37,9 +41,18 @@ import type { PracticeType } from "@/features/conversation/types";
  *    controls previously in `VoiceConversationPanel`, `VoiceMessageCard`,
  *    and the per-message `ChatBubble` button were removed so there is one
  *    obvious place to control Emma's voice.
- *  - Reserve future-placeholder controls (Translate, Slow playback) as
- *    disabled, clearly-labelled "coming soon" chips so the architecture is
- *    ready for Phase M15+ without wiring them up prematurely.
+ *  - Reserve a future-placeholder control (Slow playback) as a disabled,
+ *    clearly-labelled "coming soon" chip so the architecture is ready for
+ *    Phase M15+ without wiring it up prematurely.
+ *  - Translate (AI Conversation Translation feature): tap-to-translate the
+ *    latest AI reply into Hindi via the existing Groq LLM infrastructure
+ *    (see `translationApi.ts`). Fully independent of the conversation
+ *    pipeline and of TTS — it is presentation-only, local `useState`
+ *    scoped to this component, keyed by message id so each AI reply keeps
+ *    its own cached translation and shown/hidden state. Listen continues
+ *    to speak the English original; translation never touches
+ *    `ConversationContext`/`VoiceContext`, conversation history, or the
+ *    stored message text.
  *
  * Speech synchronization:
  * The Replay/Pause button reflects the real `playbackState` of the active AI
@@ -62,7 +75,10 @@ import type { PracticeType } from "@/features/conversation/types";
  *  - The card is a semantic `<article>` with an `aria-live="polite"` region so
  *    screen readers announce Emma's new replies.
  *  - Voice control buttons have descriptive `aria-label`s.
- *  - Future-placeholder chips are `aria-disabled` and announced as "coming soon".
+ *  - The Translate button's `aria-label`/`title` reflect its current state
+ *    (translate / translating / hide) and it exposes `aria-pressed` for its
+ *    toggle behaviour. The remaining "Slow playback" placeholder chip is
+ *    `aria-disabled` and announced as "coming soon".
  */
 
 type AIResponseCardProps = {
@@ -98,6 +114,78 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
     const toggleMute = voice?.toggleMute ?? (() => { });
 
     const latestAi = useMemo(() => pickLatestAiMessage(messages), [messages]);
+
+    // AI Conversation Translation feature — local, presentation-only state,
+    // keyed by message id so each AI reply's translation is completely
+    // independent of every other one. Nothing here touches
+    // ConversationContext/VoiceContext, so it can never affect the
+    // conversation pipeline, TTS, the timer, or history.
+    //
+    //  - `translations`: cache of already-fetched translations. Once a
+    //    message id has an entry, the LLM is never called again for it —
+    //    subsequent taps only toggle visibility.
+    //  - `translationVisible`: whether the cached translation is currently
+    //    shown for a given message id (the toggle state).
+    //  - `translatingMessageId`: the single message id (if any) with a
+    //    translation request in flight, used both to show a loading state
+    //    and to guard against firing a second request for the same message.
+    const [translations, setTranslations] = useState<Record<string, string>>({});
+    const [translationVisible, setTranslationVisible] = useState<
+        Record<string, boolean>
+    >({});
+    const [translatingMessageId, setTranslatingMessageId] = useState<
+        string | null
+    >(null);
+
+    const latestAiId = latestAi?.id ?? null;
+    const isTranslating = latestAiId !== null && translatingMessageId === latestAiId;
+    const cachedTranslation = latestAiId !== null ? translations[latestAiId] : undefined;
+    const isTranslationShown =
+        latestAiId !== null && !!translationVisible[latestAiId] && !!cachedTranslation;
+
+    /**
+     * Toggle-translate the latest AI reply into Hindi.
+     *
+     *  - Cached + hidden  → show it (no request).
+     *  - Cached + shown   → hide it (no request).
+     *  - Not cached yet   → fetch via the existing Groq-based translation
+     *    endpoint, cache it keyed by this message's id, then show it.
+     *
+     * Guarded against firing while a request for this same message is
+     * already in flight. Never touches `message.content` itself, never
+     * calls `sendMessage`/`speak`, and never persists anything — purely
+     * local UI state.
+     */
+    const handleTranslateClick = async () => {
+        if (!latestAi) return;
+        const id = latestAi.id;
+
+        if (translations[id] !== undefined) {
+            setTranslationVisible((prev) => ({ ...prev, [id]: !prev[id] }));
+            return;
+        }
+
+        if (translatingMessageId === id) return;
+
+        setTranslatingMessageId(id);
+        try {
+            const result = await translateText({
+                text: latestAi.content,
+                target_language: "hi",
+            });
+            setTranslations((prev) => ({ ...prev, [id]: result.translated_text }));
+            setTranslationVisible((prev) => ({ ...prev, [id]: true }));
+        } catch (err) {
+            toast.error("Could not translate this response", {
+                description:
+                    err instanceof ApiError
+                        ? err.detail
+                        : "Please check your connection and try again.",
+            });
+        } finally {
+            setTranslatingMessageId((prev) => (prev === id ? null : prev));
+        }
+    };
 
     // Whether the latest AI message is the one currently loaded/playing.
     const isActiveMessage = !!latestAi && activeMessageId === latestAi.id;
@@ -236,18 +324,45 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
                     </>
                 )}
 
-                {/* Future-placeholder controls — disabled, clearly "coming soon".
-                    Reserved for Phase M15+ so the architecture is ready without
-                    wiring up half-built features. */}
+                {/* Translate — AI Conversation Translation feature. Same
+                    chip styling as before (no redesign); now wired to
+                    handleTranslateClick instead of being disabled. Inert
+                    while there's no real reply to translate yet
+                    (showPlaceholder) or while a request is in flight. */}
                 <button
                     type="button"
-                    disabled
-                    aria-disabled="true"
-                    aria-label="Translate (coming soon)"
-                    title="Translate — coming soon"
-                    className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full bg-white/5 px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-inset ring-white/10"
+                    onClick={handleTranslateClick}
+                    disabled={showPlaceholder || isTranslating}
+                    aria-disabled={showPlaceholder || isTranslating}
+                    aria-pressed={isTranslationShown}
+                    aria-label={
+                        isTranslating
+                            ? "Translating to Hindi…"
+                            : isTranslationShown
+                                ? "Hide Hindi translation"
+                                : cachedTranslation
+                                    ? "Show Hindi translation"
+                                    : "Translate to Hindi"
+                    }
+                    title={
+                        isTranslating
+                            ? "Translating…"
+                            : isTranslationShown
+                                ? "Hide Hindi translation"
+                                : "Translate to Hindi"
+                    }
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-inset transition ${showPlaceholder || isTranslating
+                        ? "cursor-not-allowed bg-white/5 text-slate-400 ring-white/10"
+                        : isTranslationShown
+                            ? "bg-white/15 text-white ring-white/20 hover:bg-white/20"
+                            : "bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10"
+                        }`}
                 >
-                    <Languages className="h-3.5 w-3.5" aria-hidden="true" />
+                    {isTranslating ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                        <Languages className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
                     <span className="hidden sm:inline">Translate</span>
                 </button>
                 <button
@@ -262,6 +377,26 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
                     <span className="hidden sm:inline">Slow</span>
                 </button>
             </footer>
+
+            {/* Hindi translation — AI Conversation Translation feature.
+                Appended below the footer (not between the English text and
+                its controls) so toggling it never shifts the position of
+                the Listen/Mute/Translate buttons. Text-only: the Listen
+                button above always speaks the English original. Reuses the
+                existing spk-bubble-enter entrance animation for
+                consistency with the rest of the app, rather than
+                introducing a new one. */}
+            {isTranslationShown && cachedTranslation && (
+                <div className="spk-bubble-enter mt-4 border-t border-white/10 pt-4">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-emerald-300">
+                        <span aria-hidden="true">🇮🇳</span>
+                        Hindi Translation
+                    </p>
+                    <p className="whitespace-pre-line break-words text-[0.95rem] leading-relaxed text-slate-200">
+                        {cachedTranslation}
+                    </p>
+                </div>
+            )}
         </article>
     );
 }
