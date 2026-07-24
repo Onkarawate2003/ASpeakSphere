@@ -18,11 +18,52 @@ import { authedFetch } from "@/features/auth/api";
 const TRANSLATE_PATH = "/translate";
 
 /**
- * Supported translation target languages. Only Hindi is wired up today;
- * adding another language later is a matter of extending this union (and
- * the backend's `LANGUAGE_NAMES` map) — no other change is required.
+ * Supported translation target languages. Mirrors the backend's
+ * `LANGUAGE_NAMES` map (`app/services/translation_service.py`) key for key.
+ * Adding another language later is a matter of extending this union, adding
+ * one entry to `TRANSLATION_LANGUAGES` below, and adding the matching entry
+ * to the backend's `LANGUAGE_NAMES` — no other change is required.
  */
-export type TranslationLanguage = "hi";
+export type TranslationLanguage =
+    | "hi"
+    | "mr"
+    | "es"
+    | "fr"
+    | "de"
+    | "ja"
+    | "ko"
+    | "zh"
+    | "ar"
+    | "pt"
+    | "it";
+
+export type TranslationLanguageOption = {
+    code: TranslationLanguage;
+    /** Display name shown in the language selector. */
+    label: string;
+    /** Flag emoji shown next to the display name. */
+    flag: string;
+};
+
+/**
+ * Ordered list of selectable translation languages, used by
+ * `AIResponseCard`'s language selector. Kept here (next to
+ * `TranslationLanguage`/`translateText`) so the frontend's "supported
+ * languages" list has exactly one source of truth.
+ */
+export const TRANSLATION_LANGUAGES: readonly TranslationLanguageOption[] = [
+    { code: "hi", label: "Hindi", flag: "🇮🇳" },
+    { code: "mr", label: "Marathi", flag: "🇮🇳" },
+    { code: "es", label: "Spanish", flag: "🇪🇸" },
+    { code: "fr", label: "French", flag: "🇫🇷" },
+    { code: "de", label: "German", flag: "🇩🇪" },
+    { code: "ja", label: "Japanese", flag: "🇯🇵" },
+    { code: "ko", label: "Korean", flag: "🇰🇷" },
+    { code: "zh", label: "Chinese (Simplified)", flag: "🇨🇳" },
+    { code: "ar", label: "Arabic", flag: "🇸🇦" },
+    { code: "pt", label: "Portuguese", flag: "🇵🇹" },
+    { code: "it", label: "Italian", flag: "🇮🇹" },
+];
 
 export type TranslateRequestPayload = {
     /** The English text to translate (an existing AI reply). */

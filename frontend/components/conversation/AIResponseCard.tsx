@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
     Pause,
     Play,
@@ -19,7 +19,11 @@ import { useOptionalVoice } from "@/features/conversation/VoiceContext";
 import { TUTOR_NAME } from "@/features/conversation/constants";
 import { PRACTICE_WELCOME_MESSAGES } from "@/features/conversation/constants";
 import type { PracticeType } from "@/features/conversation/types";
-import { translateText } from "@/features/conversation/translationApi";
+import {
+    translateText,
+    TRANSLATION_LANGUAGES,
+    type TranslationLanguage,
+} from "@/features/conversation/translationApi";
 import { ApiError } from "@/features/auth/api";
 
 /**
@@ -45,14 +49,15 @@ import { ApiError } from "@/features/auth/api";
  *    clearly-labelled "coming soon" chip so the architecture is ready for
  *    Phase M15+ without wiring it up prematurely.
  *  - Translate (AI Conversation Translation feature): tap-to-translate the
- *    latest AI reply into Hindi via the existing Groq LLM infrastructure
- *    (see `translationApi.ts`). Fully independent of the conversation
- *    pipeline and of TTS — it is presentation-only, local `useState`
- *    scoped to this component, keyed by message id so each AI reply keeps
- *    its own cached translation and shown/hidden state. Listen continues
- *    to speak the English original; translation never touches
- *    `ConversationContext`/`VoiceContext`, conversation history, or the
- *    stored message text.
+ *    latest AI reply into any of the languages in `TRANSLATION_LANGUAGES`
+ *    via the existing Groq LLM infrastructure (see `translationApi.ts`).
+ *    Fully independent of the conversation pipeline and of TTS — it is
+ *    presentation-only, local `useState` scoped to this component, keyed
+ *    by message id (and then by language) so each AI reply keeps its own
+ *    per-language translation cache and its own currently-shown language.
+ *    Listen continues to speak the English original; translation never
+ *    touches `ConversationContext`/`VoiceContext`, conversation history,
+ *    or the stored message text.
  *
  * Speech synchronization:
  * The Replay/Pause button reflects the real `playbackState` of the active AI
@@ -116,65 +121,87 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
     const latestAi = useMemo(() => pickLatestAiMessage(messages), [messages]);
 
     // AI Conversation Translation feature — local, presentation-only state,
-    // keyed by message id so each AI reply's translation is completely
-    // independent of every other one. Nothing here touches
-    // ConversationContext/VoiceContext, so it can never affect the
-    // conversation pipeline, TTS, the timer, or history.
+    // keyed by message id (and then by language) so each AI reply's
+    // translations are completely independent of every other one. Nothing
+    // here touches ConversationContext/VoiceContext, so it can never affect
+    // the conversation pipeline, TTS, the timer, or history.
     //
-    //  - `translations`: cache of already-fetched translations. Once a
-    //    message id has an entry, the LLM is never called again for it —
-    //    subsequent taps only toggle visibility.
-    //  - `translationVisible`: whether the cached translation is currently
-    //    shown for a given message id (the toggle state).
-    //  - `translatingMessageId`: the single message id (if any) with a
-    //    translation request in flight, used both to show a loading state
-    //    and to guard against firing a second request for the same message.
-    const [translations, setTranslations] = useState<Record<string, string>>({});
-    const [translationVisible, setTranslationVisible] = useState<
-        Record<string, boolean>
+    //  - `translations`: per-message, per-language cache of already-fetched
+    //    translations. Once a (message id, language) pair has an entry, the
+    //    LLM is never called again for it — picking that language again
+    //    only toggles it back into view.
+    //  - `shownLanguage`: which language (if any) is currently displayed
+    //    for a given message id. `null`/absent means "showing English only".
+    //  - `translatingKey`: `"<messageId>:<language>"` for the single
+    //    translation request currently in flight (if any) — used both to
+    //    show a loading state and to guard against a duplicate request for
+    //    the same message+language.
+    //  - `isLanguageMenuOpen`: whether the language selector is currently
+    //    open for the latest AI reply.
+    const [translations, setTranslations] = useState<
+        Record<string, Partial<Record<TranslationLanguage, string>>>
     >({});
-    const [translatingMessageId, setTranslatingMessageId] = useState<
-        string | null
-    >(null);
+    const [shownLanguage, setShownLanguage] = useState<
+        Record<string, TranslationLanguage | null>
+    >({});
+    const [translatingKey, setTranslatingKey] = useState<string | null>(null);
+    const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
 
     const latestAiId = latestAi?.id ?? null;
-    const isTranslating = latestAiId !== null && translatingMessageId === latestAiId;
-    const cachedTranslation = latestAiId !== null ? translations[latestAiId] : undefined;
-    const isTranslationShown =
-        latestAiId !== null && !!translationVisible[latestAiId] && !!cachedTranslation;
+    const currentLanguage = latestAiId !== null ? shownLanguage[latestAiId] ?? null : null;
+    const currentLanguageOption = currentLanguage
+        ? TRANSLATION_LANGUAGES.find((l) => l.code === currentLanguage)
+        : undefined;
+    const cachedTranslation =
+        latestAiId !== null && currentLanguage
+            ? translations[latestAiId]?.[currentLanguage]
+            : undefined;
+    const isTranslationShown = !!currentLanguage && !!cachedTranslation;
+    const isTranslating =
+        latestAiId !== null &&
+        translatingKey !== null &&
+        translatingKey.startsWith(`${latestAiId}:`);
+    const translatingLanguage = isTranslating
+        ? (translatingKey!.slice(latestAiId!.length + 1) as TranslationLanguage)
+        : null;
+
+    // Close the language selector whenever the latest AI reply changes, so
+    // it never lingers open over a different message.
+    useEffect(() => {
+        setIsLanguageMenuOpen(false);
+    }, [latestAiId]);
 
     /**
-     * Toggle-translate the latest AI reply into Hindi.
-     *
-     *  - Cached + hidden  → show it (no request).
-     *  - Cached + shown   → hide it (no request).
-     *  - Not cached yet   → fetch via the existing Groq-based translation
-     *    endpoint, cache it keyed by this message's id, then show it.
-     *
-     * Guarded against firing while a request for this same message is
-     * already in flight. Never touches `message.content` itself, never
-     * calls `sendMessage`/`speak`, and never persists anything — purely
-     * local UI state.
+     * Fetch (or reuse the cache for) a translation of the latest AI reply
+     * into `language`, then show it. Guarded against firing while a
+     * request for this same message+language is already in flight. Never
+     * touches `message.content` itself, never calls `sendMessage`/`speak`,
+     * and never persists anything — purely local UI state.
      */
-    const handleTranslateClick = async () => {
+    const selectLanguage = async (language: TranslationLanguage) => {
         if (!latestAi) return;
         const id = latestAi.id;
 
-        if (translations[id] !== undefined) {
-            setTranslationVisible((prev) => ({ ...prev, [id]: !prev[id] }));
+        const existing = translations[id]?.[language];
+        if (existing !== undefined) {
+            setShownLanguage((prev) => ({ ...prev, [id]: language }));
             return;
         }
 
-        if (translatingMessageId === id) return;
+        const key = `${id}:${language}`;
+        if (translatingKey === key) return;
 
-        setTranslatingMessageId(id);
+        setTranslatingKey(key);
         try {
             const result = await translateText({
                 text: latestAi.content,
-                target_language: "hi",
+                target_language: language,
             });
-            setTranslations((prev) => ({ ...prev, [id]: result.translated_text }));
-            setTranslationVisible((prev) => ({ ...prev, [id]: true }));
+            setTranslations((prev) => ({
+                ...prev,
+                [id]: { ...prev[id], [language]: result.translated_text },
+            }));
+            setShownLanguage((prev) => ({ ...prev, [id]: language }));
         } catch (err) {
             toast.error("Could not translate this response", {
                 description:
@@ -183,8 +210,43 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
                         : "Please check your connection and try again.",
             });
         } finally {
-            setTranslatingMessageId((prev) => (prev === id ? null : prev));
+            setTranslatingKey((prev) => (prev === key ? null : prev));
         }
+    };
+
+    /**
+     * Language menu item handler — "English (Original)" just hides any
+     * shown translation (no request); every other option delegates to
+     * `selectLanguage`. Always closes the menu (per the "close
+     * automatically after language selection" requirement).
+     */
+    const handleSelectLanguage = (language: TranslationLanguage | "en") => {
+        setIsLanguageMenuOpen(false);
+        if (!latestAi) return;
+        if (language === "en") {
+            setShownLanguage((prev) => ({ ...prev, [latestAi.id]: null }));
+            return;
+        }
+        void selectLanguage(language);
+    };
+
+    /**
+     * Translate button click:
+     *  - Menu open        → close it.
+     *  - Translation shown → hide it (toggle back to English).
+     *  - Otherwise         → open the language selector.
+     */
+    const handleTranslateClick = () => {
+        if (!latestAi) return;
+        if (isLanguageMenuOpen) {
+            setIsLanguageMenuOpen(false);
+            return;
+        }
+        if (isTranslationShown) {
+            setShownLanguage((prev) => ({ ...prev, [latestAi.id]: null }));
+            return;
+        }
+        setIsLanguageMenuOpen(true);
     };
 
     // Whether the latest AI message is the one currently loaded/playing.
@@ -325,35 +387,37 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
                 )}
 
                 {/* Translate — AI Conversation Translation feature. Same
-                    chip styling as before (no redesign); now wired to
-                    handleTranslateClick instead of being disabled. Inert
-                    while there's no real reply to translate yet
-                    (showPlaceholder) or while a request is in flight. */}
+                    chip styling as before (no redesign); now opens a
+                    language selector instead of translating straight to
+                    Hindi. Inert while there's no real reply to translate
+                    yet (showPlaceholder) or while a request is in flight. */}
                 <button
                     type="button"
                     onClick={handleTranslateClick}
                     disabled={showPlaceholder || isTranslating}
                     aria-disabled={showPlaceholder || isTranslating}
+                    aria-haspopup="menu"
+                    aria-expanded={isLanguageMenuOpen}
                     aria-pressed={isTranslationShown}
                     aria-label={
                         isTranslating
-                            ? "Translating to Hindi…"
+                            ? "Translating…"
                             : isTranslationShown
-                                ? "Hide Hindi translation"
-                                : cachedTranslation
-                                    ? "Show Hindi translation"
-                                    : "Translate to Hindi"
+                                ? `Hide ${currentLanguageOption?.label ?? ""} translation`
+                                : isLanguageMenuOpen
+                                    ? "Close language menu"
+                                    : "Translate"
                     }
                     title={
                         isTranslating
                             ? "Translating…"
                             : isTranslationShown
-                                ? "Hide Hindi translation"
-                                : "Translate to Hindi"
+                                ? `Hide ${currentLanguageOption?.label ?? ""} translation`
+                                : "Translate"
                     }
                     className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-inset transition ${showPlaceholder || isTranslating
                         ? "cursor-not-allowed bg-white/5 text-slate-400 ring-white/10"
-                        : isTranslationShown
+                        : isTranslationShown || isLanguageMenuOpen
                             ? "bg-white/15 text-white ring-white/20 hover:bg-white/20"
                             : "bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10"
                         }`}
@@ -378,7 +442,64 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
                 </button>
             </footer>
 
-            {/* Hindi translation — AI Conversation Translation feature.
+            {/* Language selector — AI Conversation Translation feature.
+                In-flow (not an absolutely-positioned overlay), so it can
+                never be clipped by the card's `overflow-hidden` and never
+                needs portal/click-outside plumbing; it simply grows the
+                card's height while open, the same way the translation
+                block below it already does. Closes automatically as soon
+                as a language is picked. */}
+            {isLanguageMenuOpen && !showPlaceholder && (
+                <div
+                    role="menu"
+                    aria-label="Choose a translation language"
+                    className="spk-bubble-enter mt-4 border-t border-white/10 pt-4"
+                >
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                        Translate to
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => handleSelectLanguage("en")}
+                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition ${currentLanguage === null
+                                ? "bg-white/15 text-white ring-white/20"
+                                : "bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10"
+                                }`}
+                        >
+                            English (Original)
+                        </button>
+                        {TRANSLATION_LANGUAGES.map((lang) => {
+                            const isActive = currentLanguage === lang.code;
+                            const isThisTranslating =
+                                isTranslating && translatingLanguage === lang.code;
+                            return (
+                                <button
+                                    key={lang.code}
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => handleSelectLanguage(lang.code)}
+                                    disabled={isThisTranslating}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition ${isActive
+                                        ? "bg-white/15 text-white ring-white/20"
+                                        : "bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10"
+                                        } ${isThisTranslating ? "cursor-wait opacity-70" : ""}`}
+                                >
+                                    {isThisTranslating ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                    ) : (
+                                        <span aria-hidden="true">{lang.flag}</span>
+                                    )}
+                                    {lang.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* Translation display — AI Conversation Translation feature.
                 Appended below the footer (not between the English text and
                 its controls) so toggling it never shifts the position of
                 the Listen/Mute/Translate buttons. Text-only: the Listen
@@ -386,11 +507,11 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
                 existing spk-bubble-enter entrance animation for
                 consistency with the rest of the app, rather than
                 introducing a new one. */}
-            {isTranslationShown && cachedTranslation && (
+            {isTranslationShown && cachedTranslation && currentLanguageOption && (
                 <div className="spk-bubble-enter mt-4 border-t border-white/10 pt-4">
                     <p className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-emerald-300">
-                        <span aria-hidden="true">🇮🇳</span>
-                        Hindi Translation
+                        <span aria-hidden="true">{currentLanguageOption.flag}</span>
+                        {currentLanguageOption.label} Translation
                     </p>
                     <p className="whitespace-pre-line break-words text-[0.95rem] leading-relaxed text-slate-200">
                         {cachedTranslation}

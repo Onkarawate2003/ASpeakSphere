@@ -8,10 +8,21 @@ its own module — adding this feature never required touching
 from pydantic import BaseModel, Field
 
 # Extensible: add more target-language codes here as they're supported by
-# app.services.translation_service.LANGUAGE_NAMES. Only Hindi ("hi") is
-# wired up today; the request/response shape already supports any future
-# code without changing this schema.
-SUPPORTED_TARGET_LANGUAGES: tuple[str, ...] = ("hi",)
+# app.services.translation_service.LANGUAGE_NAMES. The request/response
+# shape already supports any future code without changing this schema.
+SUPPORTED_TARGET_LANGUAGES: tuple[str, ...] = (
+    "hi",
+    "mr",
+    "es",
+    "fr",
+    "de",
+    "ja",
+    "ko",
+    "zh",
+    "ar",
+    "pt",
+    "it",
+)
 
 
 class TranslateRequest(BaseModel):
@@ -25,7 +36,7 @@ class TranslateRequest(BaseModel):
     )
     target_language: str = Field(
         default="hi",
-        description="Target language code. Only 'hi' (Hindi) is supported today.",
+        description="Target language code. See SUPPORTED_TARGET_LANGUAGES for the current list.",
     )
 
 

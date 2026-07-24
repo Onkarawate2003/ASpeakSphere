@@ -15,9 +15,10 @@ own lazy Groq client, mirroring the existing per-service-module convention
 in this codebase, so this feature can never affect AI reply generation or
 speech-to-text.
 
-Only Hindi is wired up today, but the architecture is extensible: adding
-another language is a matter of adding its code to ``LANGUAGE_NAMES``
-below — no other change is required anywhere in this module or its route.
+Eleven target languages are wired up today (see ``LANGUAGE_NAMES`` below).
+The architecture remains extensible: adding another language is a matter
+of adding its code to ``LANGUAGE_NAMES`` — no other change is required
+anywhere in this module or its route.
 
 Translation is stateless and on-demand only: it is called ONLY when a
 learner explicitly taps "Translate" on an already-rendered AI reply. It
@@ -67,6 +68,16 @@ GROQ_REQUEST_TIMEOUT_SECONDS: float = 30.0
 # else in this module or its API route needs to change.
 LANGUAGE_NAMES: dict[str, str] = {
     "hi": "Hindi",
+    "mr": "Marathi",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh": "Simplified Chinese",
+    "ar": "Arabic",
+    "pt": "Portuguese",
+    "it": "Italian",
 }
 
 
