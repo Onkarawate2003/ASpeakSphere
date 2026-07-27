@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import {
     Pause,
     Play,
@@ -8,6 +8,8 @@ import {
     Languages,
     Loader2,
     Gauge,
+    ChevronDown,
+    Check,
     Sparkles,
     Volume2,
     VolumeX,
@@ -24,6 +26,10 @@ import {
     TRANSLATION_LANGUAGES,
     type TranslationLanguage,
 } from "@/features/conversation/translationApi";
+import {
+    SPEECH_SPEED_OPTIONS,
+    type SpeechSpeedValue,
+} from "@/features/conversation/speechTypes";
 import { ApiError } from "@/features/auth/api";
 
 /**
@@ -121,7 +127,9 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
     const isMuted = voice?.isMuted ?? false;
     const toggleMute = voice?.toggleMute ?? (() => { });
     const speechSpeedLabel = voice?.speechSpeedLabel ?? "Normal";
-    const cycleSpeechSpeed = voice?.cycleSpeechSpeed ?? (() => { });
+    const speechSpeedValue = voice?.speechSpeedValue ?? "normal";
+    const setSpeechSpeed = voice?.setSpeechSpeed ?? (() => { });
+    const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
 
     const latestAi = useMemo(() => pickLatestAiMessage(messages), [messages]);
 
@@ -170,11 +178,16 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
         ? (translatingKey!.slice(latestAiId!.length + 1) as TranslationLanguage)
         : null;
 
-    // Close the language selector whenever the latest AI reply changes, so
-    // it never lingers open over a different message.
-    useEffect(() => {
-        setIsLanguageMenuOpen(false);
-    }, [latestAiId]);
+    // Close the language + speed selectors whenever the latest AI reply
+    // changes, so neither lingers open over a different message. Done during
+    // render (the React-recommended pattern for "adjust state when a prop
+    // changes") rather than in an effect, to avoid cascading renders.
+    const prevLatestAiIdRef = useRef(latestAiId);
+    if (prevLatestAiIdRef.current !== latestAiId) {
+        prevLatestAiIdRef.current = latestAiId;
+        if (isLanguageMenuOpen) setIsLanguageMenuOpen(false);
+        if (isSpeedMenuOpen) setIsSpeedMenuOpen(false);
+    }
 
     /**
      * Fetch (or reuse the cache for) a translation of the latest AI reply
@@ -434,27 +447,83 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
                     )}
                     <span className="hidden sm:inline">Translate</span>
                 </button>
-                {/* Speech speed control — cycles Normal → Slow → Fast →
-                    Very Fast → Normal. Same chip styling/position as
-                    before (it replaces the old disabled placeholder); only
-                    shown alongside the other voice controls since it has
-                    nothing to control without TTS. Purely a state update —
-                    it never fetches new audio by itself (see
-                    `useTtsPlayback.cycleSpeechSpeed`); the new speed takes
+                {/* Speech Speed selector — replaces the old cycle button.
+                    Mobile users could not see the available speeds (the old
+                    chip hid its label on small screens), so this now opens a
+                    dropdown listing every option, matching the Translate
+                    language selector pattern. The label is always visible so
+                    the current speed is clear on every screen size. Purely a
+                    state update — it never fetches new audio by itself (see
+                    `useTtsPlayback.setSpeechSpeed`); the new speed takes
                     effect on the next Listen/Replay. */}
                 {ttsEnabled && !showPlaceholder && (
                     <button
                         type="button"
-                        onClick={cycleSpeechSpeed}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 ring-1 ring-inset ring-white/10 transition hover:bg-white/10 active:scale-95"
-                        aria-label={`Playback speed: ${speechSpeedLabel}. Tap to change.`}
-                        title={`Playback speed: ${speechSpeedLabel} — tap to change`}
+                        onClick={() => setIsSpeedMenuOpen((prev) => !prev)}
+                        aria-haspopup="menu"
+                        aria-expanded={isSpeedMenuOpen}
+                        aria-label={`Speech speed: ${speechSpeedLabel}. Tap to change.`}
+                        title={`Speech speed: ${speechSpeedLabel} — tap to change`}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-inset transition active:scale-95 ${isSpeedMenuOpen
+                            ? "bg-white/15 text-white ring-white/20 hover:bg-white/20"
+                            : "bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10"
+                            }`}
                     >
                         <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span className="hidden sm:inline">{speechSpeedLabel}</span>
+                        <span>{speechSpeedLabel}</span>
+                        <ChevronDown
+                            className={`h-3 w-3 transition-transform ${isSpeedMenuOpen ? "rotate-180" : ""}`}
+                            aria-hidden="true"
+                        />
                     </button>
                 )}
             </footer>
+
+            {/* Speech Speed selector — mirrors the in-flow language selector
+                pattern below (not an absolutely-positioned overlay), so it
+                can never be clipped by the card's `overflow-hidden` and never
+                needs portal/click-outside plumbing; it simply grows the
+                card's height while open. Closes automatically as soon as a
+                speed is picked. The selected option is persisted via
+                `useTtsPlayback.setSpeechSpeed` (localStorage) and takes effect
+                on the next Listen/Replay. */}
+            {isSpeedMenuOpen && !showPlaceholder && (
+                <div
+                    role="menu"
+                    aria-label="Choose a speech speed"
+                    className="spk-bubble-enter mt-4 border-t border-white/10 pt-4"
+                >
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                        Speech speed
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                        {SPEECH_SPEED_OPTIONS.map((option) => {
+                            const isActive = speechSpeedValue === option.value;
+                            return (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    role="menuitem"
+                                    aria-current={isActive ? "true" : undefined}
+                                    onClick={() => {
+                                        setSpeechSpeed(option.value as SpeechSpeedValue);
+                                        setIsSpeedMenuOpen(false);
+                                    }}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition ${isActive
+                                        ? "bg-white/15 text-white ring-white/20"
+                                        : "bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10"
+                                        }`}
+                                >
+                                    {isActive ? (
+                                        <Check className="h-3 w-3" aria-hidden="true" />
+                                    ) : null}
+                                    {option.label} ({option.rate}x)
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Language selector — AI Conversation Translation feature.
                 In-flow (not an absolutely-positioned overlay), so it can

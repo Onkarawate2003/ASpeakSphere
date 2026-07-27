@@ -35,15 +35,42 @@ export type SynthesizePayload = {
 };
 
 /**
- * Speech Speed Control — the supported playback speed multipliers, in the
- * exact order the AIResponseCard's speed button cycles through them:
- * Normal → Slow → Fast → Very Fast → Normal → …
+ * Speech Speed Control — the supported playback speed multipliers.
  *
- * Mirrors `SUPPORTED_SPEECH_SPEEDS` in `backend/app/schemas/speech.py` — the
- * backend is the source of truth for which values are valid; this list must
- * stay in sync with it (same reasoning as `MAX_USER_MESSAGES` mirroring a
- * backend constant elsewhere in this feature area).
+ * The numeric `rate` values mirror `SUPPORTED_SPEECH_SPEEDS` in
+ * `backend/app/schemas/speech.py` — the backend is the source of truth for
+ * which values are valid; this list must stay in sync with it (same reasoning
+ * as `MAX_USER_MESSAGES` mirroring a backend constant elsewhere in this
+ * feature area).
+ *
+ * Each option exposes a stable string `value` (used as the persisted
+ * identifier and the dropdown key), a human-readable `label`, and the numeric
+ * `rate` actually sent to the backend in the synthesize payload.
  */
+export interface SpeechSpeedOption {
+    /** Stable identifier used for state + localStorage persistence. */
+    value: SpeechSpeedValue;
+    /** Human-readable label shown in the dropdown (e.g. "Normal"). */
+    label: string;
+    /** Numeric multiplier sent to the backend (e.g. 1.0). */
+    rate: SpeechSpeed;
+}
+
+/** Stable string identifiers for each supported speed. */
+export type SpeechSpeedValue = "slow" | "normal" | "fast" | "very_fast";
+
+/**
+ * Ordered list of selectable speed options, shown in the Speech Speed
+ * dropdown. Default is "normal" (1x).
+ */
+export const SPEECH_SPEED_OPTIONS: readonly SpeechSpeedOption[] = [
+    { value: "slow", label: "Slow", rate: 0.75 },
+    { value: "normal", label: "Normal", rate: 1 },
+    { value: "fast", label: "Fast", rate: 1.25 },
+    { value: "very_fast", label: "Very Fast", rate: 1.5 },
+] as const;
+
+/** The numeric playback multipliers supported by the backend. */
 export const SPEECH_SPEED_CYCLE = [1, 0.75, 1.25, 1.5] as const;
 
 export type SpeechSpeed = (typeof SPEECH_SPEED_CYCLE)[number];
@@ -55,3 +82,31 @@ export const SPEECH_SPEED_LABELS: Record<SpeechSpeed, string> = {
     1.25: "Fast",
     1.5: "Very Fast",
 };
+
+/** Default speed option (Normal / 1x). */
+export const DEFAULT_SPEECH_SPEED_VALUE: SpeechSpeedValue = "normal";
+
+/**
+ * Look up the numeric `rate` for a given speed `value`. Falls back to the
+ * default (1x) if the value is unknown (e.g. a stale persisted value from an
+ * older app version), so playback never breaks.
+ */
+export function speechSpeedRateForValue(
+    value: SpeechSpeedValue,
+): SpeechSpeed {
+    const option = SPEECH_SPEED_OPTIONS.find((o) => o.value === value);
+    return option ? option.rate : 1;
+}
+
+/**
+ * Look up the option object for a given numeric `rate`. Falls back to the
+ * default option if the rate is unknown.
+ */
+export function speechSpeedOptionForRate(
+    rate: SpeechSpeed,
+): SpeechSpeedOption {
+    return (
+        SPEECH_SPEED_OPTIONS.find((o) => o.rate === rate) ??
+        SPEECH_SPEED_OPTIONS.find((o) => o.value === DEFAULT_SPEECH_SPEED_VALUE)!
+    );
+}
