@@ -59,6 +59,7 @@ import logging
 import os
 from typing import Optional
 
+from app.schemas.speech import SUPPORTED_SPEECH_SPEEDS
 from app.services.accent_manager import AccentCode
 from app.services.voice_selector import voice_selector
 
@@ -98,6 +99,19 @@ EDGE_TTS_PITCH: str = os.getenv("EDGE_TTS_PITCH", "+0Hz")
 # Hard cap on input text length to keep latency bounded and avoid abuse.
 MAX_INPUT_CHARS: int = 5000
 
+# Speech Speed Control — maps each supported speed multiplier (validated by
+# `SynthesizeRequest.speed`, see `app.schemas.speech`) to the Edge TTS
+# `rate` prosody adjustment. 1.0 (normal) intentionally falls back to the
+# operator-configured `EDGE_TTS_RATE` env var below rather than "+0%", so a
+# request that omits `speed` (or explicitly passes the default) behaves
+# exactly as it did before Speech Speed Control existed.
+_SPEED_RATE_OVERRIDES: dict[float, str] = {
+    0.75: "-25%",
+    1.25: "+25%",
+    1.5: "+50%",
+}
+assert set(_SPEED_RATE_OVERRIDES) | {1.0} == set(SUPPORTED_SPEECH_SPEEDS)
+
 
 class TTSServiceError(Exception):
     """Raised when the TTS layer cannot synthesize speech.
@@ -121,7 +135,11 @@ def is_tts_configured() -> bool:
     return _EDGE_TTS_AVAILABLE
 
 
-async def synthesize_speech(text: str, accent: Optional[AccentCode] = None) -> bytes:
+async def synthesize_speech(
+    text: str,
+    accent: Optional[AccentCode] = None,
+    speed: float = 1.0,
+) -> bytes:
     """Synthesize ``text`` into spoken audio via Microsoft Edge TTS.
 
     Parameters
@@ -136,6 +154,14 @@ async def synthesize_speech(text: str, accent: Optional[AccentCode] = None) -> b
         unknown, the default accent's voice is used, preserving the
         pre-M13 behaviour. The ``EDGE_TTS_VOICE`` env var, when set,
         always overrides this selection.
+    speed:
+        Playback speed multiplier (Speech Speed Control). Must be one of
+        :data:`app.schemas.speech.SUPPORTED_SPEECH_SPEEDS` — the API layer
+        already validates this via ``SynthesizeRequest``, but the service
+        re-checks it since it is also callable directly. Defaults to
+        ``1.0`` (normal), which reuses the operator-configured
+        ``EDGE_TTS_RATE`` env var exactly as before this feature existed —
+        existing callers that never pass ``speed`` are unaffected.
 
     Returns
     -------
@@ -146,7 +172,8 @@ async def synthesize_speech(text: str, accent: Optional[AccentCode] = None) -> b
     ------
     TTSServiceError
         With a ``status_code`` suitable for direct HTTP mapping on any
-        failure (library missing, timeout, network, empty input).
+        failure (library missing, timeout, network, empty input, or an
+        unsupported ``speed``).
     """
     cleaned = (text or "").strip()
     if not cleaned:
@@ -157,6 +184,13 @@ async def synthesize_speech(text: str, accent: Optional[AccentCode] = None) -> b
     if len(cleaned) > MAX_INPUT_CHARS:
         # Truncate rather than reject so a long reply still gets spoken.
         cleaned = cleaned[:MAX_INPUT_CHARS]
+
+    if speed not in SUPPORTED_SPEECH_SPEEDS:
+        raise TTSServiceError(
+            f"Unsupported speed {speed!r}. Supported values: "
+            f"{SUPPORTED_SPEECH_SPEEDS}.",
+            status_code=422,
+        )
 
     if not _EDGE_TTS_AVAILABLE:
         # Graceful degradation: library not installed. The frontend uses
@@ -172,10 +206,23 @@ async def synthesize_speech(text: str, accent: Optional[AccentCode] = None) -> b
     # EDGE_TTS_VOICE env var still wins when set (operator override).
     voice = voice_selector.select_voice(accent)
 
+    # Speech Speed Control — an explicit non-default speed overrides the
+    # operator's baseline rate for this one request; the default (1.0)
+    # falls through to EDGE_TTS_RATE exactly as before.
+    rate = _SPEED_RATE_OVERRIDES.get(speed, EDGE_TTS_RATE)
+
+    # TEMP DEBUG (Speech Speed Control diagnosis) — confirms what actually
+    # reaches edge_tts.Communicate for this request. Remove once speed
+    # control is verified end-to-end in a real browser session.
+    logger.info(
+        "TTS synthesize: speed=%r -> rate=%r, voice=%r, chars=%d",
+        speed, rate, voice, len(cleaned),
+    )
+
     communicate = edge_tts.Communicate(
         cleaned,
         voice=voice,
-        rate=EDGE_TTS_RATE,
+        rate=rate,
         volume=EDGE_TTS_VOLUME,
         pitch=EDGE_TTS_PITCH,
     )
@@ -206,6 +253,15 @@ async def synthesize_speech(text: str, accent: Optional[AccentCode] = None) -> b
             "The voice service returned empty audio. The text is still shown above.",
             status_code=502,
         )
+
+    # TEMP DEBUG (Speech Speed Control diagnosis) — byte size is a direct
+    # proxy for duration at a fixed bitrate (48 kbps CBR MP3, per edge-tts).
+    # Comparing this across speeds for the SAME text is the fastest way to
+    # confirm the rate genuinely changed the output, without decoding audio.
+    logger.info(
+        "TTS synthesize result: speed=%r -> %d bytes", speed, len(audio_bytes),
+    )
+
     return audio_bytes
 
 

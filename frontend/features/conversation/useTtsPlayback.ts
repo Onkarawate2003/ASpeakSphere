@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { synthesizeSpeech } from "./speechApi";
 import { getSpeechStatus } from "./speechApi";
-import type { SpeechStatusDTO } from "./speechTypes";
+import {
+    SPEECH_SPEED_CYCLE,
+    SPEECH_SPEED_LABELS,
+    type SpeechSpeed,
+    type SpeechStatusDTO,
+} from "./speechTypes";
 import { ApiError } from "@/features/auth/api";
 
 /**
@@ -33,6 +38,22 @@ export type TtsPlaybackResult = {
     playbackState: PlaybackState;
     /** Whether audio is currently muted (master mute). */
     isMuted: boolean;
+    /**
+     * Speech Speed Control — the currently selected playback speed
+     * multiplier. Persists for the current conversation session (resets
+     * only when the provider remounts), the same way `isMuted` already
+     * does. Applied to every `speak()` call made after it changes.
+     */
+    speechSpeed: SpeechSpeed;
+    /** Display label for `speechSpeed` (e.g. "Normal", "Slow"). */
+    speechSpeedLabel: string;
+    /**
+     * Advance to the next speed in the cycle: Normal → Slow → Fast → Very
+     * Fast → Normal. Pure state update — makes no network request, so
+     * tapping it never regenerates any audio by itself. The new speed only
+     * takes effect on the next `speak()`/`replay()` call.
+     */
+    cycleSpeechSpeed: () => void;
     /**
      * The message id whose audio is currently loaded/playing, so the UI can
      * highlight the active reply. Null when nothing is loaded.
@@ -81,11 +102,21 @@ export function useTtsPlayback(): TtsPlaybackResult {
     const [activeMessageId, setActiveMessageId] = useState<string | null>(
         null,
     );
+    // Speech Speed Control — session-scoped state, same lifetime as
+    // `isMuted` above (resets only when the provider remounts).
+    const [speechSpeed, setSpeechSpeed] = useState<SpeechSpeed>(1);
 
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const objectUrlRef = useRef<string | null>(null);
     // Monotonic token so a stale TTS fetch can't overwrite a newer one.
     const requestTokenRef = useRef<number>(0);
+    // Remembers the (messageId, text, speed) behind the currently loaded
+    // audio so `replay()` can tell whether the speed has changed since that
+    // audio was generated, and re-synthesize only when it actually has.
+    const lastRequestRef = useRef<{ messageId: string; text: string } | null>(
+        null,
+    );
+    const lastSynthesizedSpeedRef = useRef<SpeechSpeed>(1);
 
     /** Create the audio element lazily (client-side only). */
     const ensureAudioElement = useCallback((): HTMLAudioElement => {
@@ -182,13 +213,29 @@ export function useTtsPlayback(): TtsPlaybackResult {
             setActiveMessageId(messageId);
             setPlaybackState("loading");
 
+            // Speech Speed Control — remember exactly what this request was
+            // for (and at what speed) so replay() can later tell whether the
+            // speed has since changed and a fresh synthesis is needed.
+            lastRequestRef.current = { messageId, text };
+            lastSynthesizedSpeedRef.current = speechSpeed;
+
+            // TEMP DEBUG (Speech Speed Control diagnosis) — confirms the
+            // speed actually held in state and the exact payload about to
+            // be sent, at the moment of the request. Remove once verified.
+            // eslint-disable-next-line no-console
+            console.debug("[TTS speak]", {
+                messageId,
+                speechSpeed,
+                payload: { text, speed: speechSpeed },
+            });
+
             // Stop any currently playing audio first.
             const el = ensureAudioElement();
             el.pause();
             revokeUrl();
 
             try {
-                const buffer = await synthesizeSpeech({ text });
+                const buffer = await synthesizeSpeech({ text, speed: speechSpeed });
                 // Stale guard: a newer speak() call superseded this one.
                 if (requestTokenRef.current !== token) return;
 
@@ -220,7 +267,7 @@ export function useTtsPlayback(): TtsPlaybackResult {
                 setPlaybackState("error");
             }
         },
-        [ttsEnabled, isMuted, ensureAudioElement, revokeUrl, attachEvents],
+        [ttsEnabled, isMuted, speechSpeed, ensureAudioElement, revokeUrl, attachEvents],
     );
 
     const pause = useCallback(() => {
@@ -237,6 +284,18 @@ export function useTtsPlayback(): TtsPlaybackResult {
     }, []);
 
     const replay = useCallback(() => {
+        // Speech Speed Control — if the speed has changed since this audio
+        // was generated, a plain seek-and-play would replay it at the old
+        // speed. Re-synthesize at the current speed instead. When the speed
+        // hasn't changed, this is a no-op fast path exactly like before:
+        // no network request, just seek + play.
+        if (
+            lastSynthesizedSpeedRef.current !== speechSpeed &&
+            lastRequestRef.current
+        ) {
+            void speak(lastRequestRef.current.messageId, lastRequestRef.current.text);
+            return;
+        }
         const el = audioRef.current;
         if (el && el.src) {
             el.currentTime = 0;
@@ -244,7 +303,7 @@ export function useTtsPlayback(): TtsPlaybackResult {
                 setPlaybackState("paused");
             });
         }
-    }, []);
+    }, [speak, speechSpeed]);
 
     const toggleMute = useCallback(() => {
         setIsMuted((prev) => {
@@ -252,6 +311,26 @@ export function useTtsPlayback(): TtsPlaybackResult {
             if (audioRef.current) {
                 audioRef.current.muted = next;
             }
+            return next;
+        });
+    }, []);
+
+    /**
+     * Speech Speed Control — advance to the next speed in the fixed cycle
+     * (Normal → Slow → Fast → Very Fast → Normal → …). Pure state update:
+     * no network request, so changing speed never regenerates any audio by
+     * itself — the new speed is only used the next time `speak()` or a
+     * stale-speed `replay()` runs.
+     */
+    const cycleSpeechSpeed = useCallback(() => {
+        setSpeechSpeed((prev) => {
+            const currentIndex = SPEECH_SPEED_CYCLE.indexOf(prev);
+            const nextIndex = (currentIndex + 1) % SPEECH_SPEED_CYCLE.length;
+            const next = SPEECH_SPEED_CYCLE[nextIndex];
+            // TEMP DEBUG (Speech Speed Control diagnosis) — confirms the
+            // button click actually advances state. Remove once verified.
+            // eslint-disable-next-line no-console
+            console.debug("[TTS cycleSpeechSpeed]", { prev, next });
             return next;
         });
     }, []);
@@ -273,6 +352,9 @@ export function useTtsPlayback(): TtsPlaybackResult {
         sttEnabled,
         playbackState,
         isMuted,
+        speechSpeed,
+        speechSpeedLabel: SPEECH_SPEED_LABELS[speechSpeed],
+        cycleSpeechSpeed,
         activeMessageId,
         speak,
         pause,

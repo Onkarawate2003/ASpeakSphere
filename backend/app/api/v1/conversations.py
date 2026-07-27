@@ -49,6 +49,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
+#: Mirrors ``MAX_USER_MESSAGES`` in
+#: ``frontend/features/conversation/constants.ts`` — the frontend auto-
+#: completes a session once the learner has sent this many messages. Used
+#: here ONLY to flag Emma's system prompt for the closing turn (Phase 8A
+#: "final turn awareness"); it does not trigger, gate, or otherwise change
+#: completion itself, which remains entirely frontend-driven via the
+#: existing ``PATCH /{id}`` status update.
+_FINAL_TURN_USER_MESSAGE_COUNT = 10
+
 
 def _user_accent(current_user: User) -> Optional[str]:
     """Return the authenticated user's chosen English accent, or ``None``.
@@ -306,6 +315,16 @@ def add_message(
     #    message as its final entry) to give Emma complete context.
     history = get_messages(db, conversation_id=conversation.id)
 
+    # Phase 8A — final turn awareness. The frontend auto-completes a session
+    # once the learner has sent _FINAL_TURN_USER_MESSAGE_COUNT messages; we
+    # mirror that same threshold here purely to flag Emma's prompt for this
+    # turn, so her reply wraps up naturally instead of asking a fresh
+    # question the UI is about to cut off. This does not change history
+    # loading, message persistence, or completion — only the prompt text
+    # sent for this one reply.
+    user_message_count = sum(1 for msg in history if msg.sender == MessageSender.user)
+    is_final_turn = user_message_count >= _FINAL_TURN_USER_MESSAGE_COUNT
+
     # 3. Generate Emma's reply via the Groq AI service. Phase 9 — pass the
     #    persisted lesson so Emma stays focused on today's lesson topic.
     #    Phase M13 — pass the learner's accent, proficiency level and
@@ -322,6 +341,7 @@ def add_message(
             learning_goal=_user_learning_goal(current_user),
             lesson_title=conversation.lesson_title,
             lesson_objectives=_objectives_from_text(conversation.lesson_objectives),
+            is_final_turn=is_final_turn,
         )
     except AIServiceError as exc:
         # The user's message is preserved; do NOT save an empty AI reply.

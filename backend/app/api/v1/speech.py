@@ -186,12 +186,21 @@ async def synthesize(
     Returns raw MP3 bytes with ``Content-Type: audio/mpeg``. The frontend
     creates an object URL and auto-plays it for the newest AI reply.
 
+    ``payload.speed`` (Speech Speed Control) defaults to ``1.0`` and is
+    optional — callers that never send it get the exact pre-existing
+    behaviour, since ``synthesize_speech`` falls back to the operator's
+    ``EDGE_TTS_RATE`` env var whenever ``speed`` is the default.
+
     If TTS is not configured (``edge-tts`` not installed), returns 503 so
     the frontend can fall back to text-only display without breaking the
     session.
     """
     try:
-        audio_bytes = await synthesize_speech(payload.text, accent=_user_accent(current_user))
+        audio_bytes = await synthesize_speech(
+            payload.text,
+            accent=_user_accent(current_user),
+            speed=payload.speed,
+        )
     except TTSServiceError as exc:
         logger.warning(
             "TTS synthesis failed for user %s: %s (status %s)",

@@ -33,7 +33,8 @@ Architecture::
 
 from __future__ import annotations
 
-from typing import List, Optional
+import string
+from typing import Dict, List, Optional
 
 from app.models.messages import ConversationMessage
 from app.schemas.conversations import PracticeType
@@ -52,9 +53,19 @@ _BASE_PERSONA = (
     "conversation. You are warm, patient and supportive. Introduce yourself "
     "as Emma only when it feels natural to do so (for example at the very "
     "start of a session). Keep your responses concise and conversational. "
-    "Ask follow-up questions naturally to keep the dialogue flowing. "
-    "Never mention Groq, APIs, language models, or that you are an AI "
-    "language model — you are simply Emma the tutor."
+    "Vary how you open, greet, acknowledge and transition between turns — "
+    "avoid repeating the same stock phrases (for example, don't default to "
+    "\"That's great!\", \"Excellent!\", or \"Interesting!\" every time); find "
+    "fresh, natural ways to react to what the learner actually said. Ask "
+    "follow-up questions naturally to keep the dialogue flowing, favouring "
+    "\"why\", opinion, experience or feeling-based questions over repeating "
+    "shallow \"tell me more\" prompts — though not every turn needs one. "
+    "When the learner makes a mistake, correct it like a coach mid-"
+    "conversation: briefly acknowledge what they said, weave in the "
+    "correction naturally in a sentence or two, then keep the conversation "
+    "moving — never stop the flow to lecture. Never mention Groq, APIs, "
+    "language models, or that you are an AI language model — you are simply "
+    "Emma the tutor."
 )
 
 #: Practice-mode-specific instructions. Keyed by the ``PracticeType`` value.
@@ -88,12 +99,29 @@ _MODE_INSTRUCTIONS: dict[str, str] = {
         "conversation does not turn into a lecture."
     ),
     PracticeType.pronunciation.value: (
-        "This is a PRONUNCIATION practice session. Speech recognition is not "
-        "available, so assume the learner typed the sentence they intended "
-        "to say. Provide pronunciation guidance in text only: suggest "
-        "syllable stress, rhythm, emphasis and commonly mispronounced sounds "
-        "for the words the learner used. Do NOT pretend to hear the learner's "
-        "pronunciation. Keep guidance practical and encouraging."
+        "This is a PRONUNCIATION practice session. You only ever receive a "
+        "text transcript of what the learner said — never audio — so "
+        "receiving their words as text is NOT the same as hearing how they "
+        "sounded. You cannot judge stress, rhythm, intonation, vowel "
+        "sounds, or accuracy, and you must never evaluate the quality of "
+        "the learner's pronunciation or imply any confidence in how they "
+        "sounded — not even generic praise. Avoid phrases like \"I "
+        "heard...\", \"You pronounced...\", \"You stressed...\", \"You "
+        "emphasized...\", \"Your vowel...\", \"Your intonation...\", \"I "
+        "noticed...\", \"I can tell...\", \"You said it correctly\", \"You "
+        "got it right\", \"That sounds great\", \"That sounded good\", "
+        "\"Excellent/Perfect/Nice/Well pronounced\", or \"Exactly right\" — "
+        "none of these can be true from text alone. Instead, teach like a "
+        "tutor explaining a rule: describe the standard pronunciation and "
+        "stress pattern (\"Native speakers usually stress OFFICE on the "
+        "first syllable\"), explain common mistakes with a word in general, "
+        "compare noun vs. verb stress (RE-cord vs. re-CORD), demonstrate the "
+        "target pronunciation in text, and recommend the learner try again "
+        "against that model. You may name specific words from the "
+        "transcript to practice them, use the learner's own sentence as a "
+        "practice example, and thank them for practicing — but never "
+        "comment on how they actually pronounced those words. Keep "
+        "guidance practical and encouraging."
     ),
 }
 
@@ -192,9 +220,62 @@ _GOAL_INSTRUCTIONS: dict[str, str] = {
     ),
 }
 
+#: Appended, in place of nothing extra, only on the turn the caller has
+#: identified as the learner's last message before session completion. Keeps
+#: Emma from ending on an open question that the UI is about to cut off.
+_FINAL_TURN_INSTRUCTIONS = (
+    "This is the LAST message you will send in this practice session — the "
+    "learner is about to finish. Do not ask a new open-ended question or "
+    "start a new topic. Instead, naturally wrap up: briefly acknowledge "
+    "something specific from the conversation, offer one warm, encouraging "
+    "note about their effort, and close with a friendly sign-off. Keep it "
+    "conversational, not like a formal report."
+)
+
 #: Hard cap on how many history messages we send to Groq. Each turn is two
 #: messages (user + ai), so this allows ~50 exchanges.
 MAX_HISTORY_MESSAGES: int = 100
+
+
+# --------------------------------------------------------------------- #
+# Phase 8B — lightweight, deterministic session-context derivation
+# --------------------------------------------------------------------- #
+#
+# Everything below derives a short "what's already happened in this
+# session" summary purely from the message list PromptBuilder already has
+# in memory. No AI calls, no persistence, no regex, no NLP libraries — just
+# plain string operations over the existing transcript, so it costs a
+# single O(n) pass per turn and nothing else changes about the request.
+
+#: Common short words filtered out of the keyword scan so it surfaces topic
+#: words instead of grammatical filler. Intentionally coarse — this is a
+#: lightweight heuristic, not a linguistic stopword list.
+_SESSION_CONTEXT_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the", "and", "that", "this", "with", "have", "from", "your", "about",
+        "just", "like", "what", "when", "where", "which", "will", "would",
+        "could", "should", "there", "their", "they", "them", "then", "than",
+        "here", "were", "been", "being", "does", "doing", "done", "into",
+        "really", "very", "some", "such", "also", "because", "though",
+        "emma", "okay", "yeah", "well", "much", "many", "more", "most",
+        "today", "session", "practice", "practise", "learner", "learning",
+    }
+)
+
+#: Only surface a word as a recurring topic once it has appeared at least
+#: this many times — a single mention isn't a pattern worth reinforcing.
+_SESSION_CONTEXT_MIN_WORD_COUNT: int = 2
+
+#: Cap how many recurring keywords / repeated AI questions / repeated user
+#: questions are included, so the derived block stays short regardless of
+#: how long the conversation gets.
+_SESSION_CONTEXT_MAX_KEYWORDS: int = 6
+_SESSION_CONTEXT_MAX_AI_QUESTIONS: int = 4
+_SESSION_CONTEXT_MAX_USER_REPEATS: int = 3
+
+#: Below this many stored messages there isn't enough transcript yet for a
+#: session-context block to say anything useful, so it's skipped entirely.
+_SESSION_CONTEXT_MIN_HISTORY: int = 2
 
 
 # --------------------------------------------------------------------- #
@@ -289,6 +370,108 @@ class PromptBuilder:
             "oriented around this topic, but let it flow naturally."
         )
 
+    # -- session context (Phase 8B) ------------------------------------ #
+
+    @staticmethod
+    def _derive_session_context(
+        history: Optional[List[ConversationMessage]],
+    ) -> Optional[str]:
+        """Derive a short, deterministic "what's already happened" summary.
+
+        Single O(n) pass over the already-loaded ``history`` — no AI calls,
+        no persistence, no regex, no NLP. It surfaces three cheap signals:
+
+          * AI questions already asked (so Emma doesn't repeat them).
+          * Learner questions asked more than once (a sign they didn't get
+            the answer they needed, or the topic matters to them).
+          * Content words mentioned repeatedly (a rough proxy for topics,
+            interests or vocabulary already in play this session).
+
+        Returns ``None`` when there isn't enough transcript yet, or nothing
+        useful was found, so short/early sessions get no extra prompt text.
+        """
+        if not history or len(history) < _SESSION_CONTEXT_MIN_HISTORY:
+            return None
+
+        ai_questions: List[str] = []
+        user_question_counts: "Dict[str, int]" = {}
+        user_question_display: "Dict[str, str]" = {}
+        word_counts: "Dict[str, int]" = {}
+
+        for msg in history:
+            text = (msg.message or "").strip()
+            if not text:
+                continue
+            is_ai = msg.sender == "ai"
+
+            if "?" in text:
+                if is_ai:
+                    if text not in ai_questions:
+                        ai_questions.append(text)
+                else:
+                    key = " ".join(text.lower().split())
+                    user_question_counts[key] = user_question_counts.get(key, 0) + 1
+                    user_question_display.setdefault(key, text)
+
+            for raw_word in text.split():
+                word = raw_word.strip(string.punctuation).lower()
+                if len(word) < 4 or not word.isalpha():
+                    continue
+                if word in _SESSION_CONTEXT_STOPWORDS:
+                    continue
+                word_counts[word] = word_counts.get(word, 0) + 1
+
+        recent_ai_questions = ai_questions[-_SESSION_CONTEXT_MAX_AI_QUESTIONS:]
+
+        repeated_user_questions = [
+            user_question_display[key]
+            for key, count in user_question_counts.items()
+            if count > 1
+        ][:_SESSION_CONTEXT_MAX_USER_REPEATS]
+
+        top_keywords = sorted(
+            (word for word, count in word_counts.items() if count >= _SESSION_CONTEXT_MIN_WORD_COUNT),
+            key=lambda word: word_counts[word],
+            reverse=True,
+        )[:_SESSION_CONTEXT_MAX_KEYWORDS]
+
+        if not recent_ai_questions and not repeated_user_questions and not top_keywords:
+            return None
+
+        lines: List[str] = [
+            "SESSION CONTEXT (derived automatically from this conversation so far):"
+        ]
+
+        if recent_ai_questions:
+            joined = " / ".join(f"\"{q}\"" for q in recent_ai_questions)
+            lines.append(
+                f"- You already asked: {joined}. Do not ask these again — "
+                "build on what the learner already told you instead."
+            )
+
+        if repeated_user_questions:
+            joined = " / ".join(f"\"{q}\"" for q in repeated_user_questions)
+            lines.append(
+                f"- The learner has asked this more than once: {joined}. "
+                "They may not have gotten a clear answer — try answering it "
+                "more directly this time."
+            )
+
+        if top_keywords:
+            joined = ", ".join(top_keywords)
+            lines.append(
+                f"- Words or topics that keep coming up: {joined}. Reference "
+                "or build on these naturally instead of reintroducing them "
+                "from scratch."
+            )
+
+        lines.append(
+            "Treat this as light memory of the conversation so far, not a "
+            "script to follow — use it only where it fits naturally."
+        )
+
+        return "\n".join(lines)
+
     # -- public system prompt ----------------------------------------- #
 
     def build_system_prompt(
@@ -301,6 +484,8 @@ class PromptBuilder:
         topic: Optional[str] = None,
         lesson_title: Optional[str] = None,
         lesson_objectives: Optional[List[str]] = None,
+        is_final_turn: bool = False,
+        history: Optional[List[ConversationMessage]] = None,
     ) -> str:
         """Assemble Emma's full system prompt.
 
@@ -314,6 +499,12 @@ class PromptBuilder:
           5. Learning-goal guidance (when known).
           6. Topic guidance (when provided).
           7. Lesson-aware block (when a lesson is selected).
+          8. Session-context block (Phase 8B — derived deterministically
+             from ``history`` when enough transcript exists; ``None`` is a
+             silent no-op so behaviour is unchanged when omitted).
+          9. Final-turn wrap-up guidance (only when ``is_final_turn``) —
+             kept last so it stays the most recent, most emphasised
+             instruction on the closing turn.
 
         The practice-type values are validated by the Pydantic enum
         upstream, so an unknown mode is impossible here — but we guard
@@ -345,6 +536,13 @@ class PromptBuilder:
         lesson_block = self._build_lesson_block(lesson_title, lesson_objectives)
         if lesson_block:
             parts.append(lesson_block)
+
+        session_context_block = self._derive_session_context(history)
+        if session_context_block:
+            parts.append(session_context_block)
+
+        if is_final_turn:
+            parts.append(_FINAL_TURN_INSTRUCTIONS)
 
         return "\n\n".join(parts)
 
@@ -378,6 +576,7 @@ class PromptBuilder:
         topic: Optional[str] = None,
         lesson_title: Optional[str] = None,
         lesson_objectives: Optional[List[str]] = None,
+        is_final_turn: bool = False,
     ) -> List[dict[str, str]]:
         """Build the full Groq chat payload.
 
@@ -393,7 +592,30 @@ class PromptBuilder:
         it first), so we rely on ``history`` as the single source of truth. We
         cap the history to :data:`MAX_HISTORY_MESSAGES` (most recent first) to
         bound token usage while always including the latest exchange.
+
+        ``is_final_turn`` lets the caller flag that this is the learner's
+        last message before the session auto-completes, so Emma's system
+        prompt gains the wrap-up instructions instead of another open
+        question. It only affects prompt content — no extra request is made.
+
+        Phase 8B: ``history`` (bounded to the same window actually sent to
+        Groq) is also passed to :meth:`build_system_prompt` so it can derive
+        a short session-context block (already-asked questions, repeated
+        learner questions, recurring keywords) from the same transcript
+        already loaded here — no extra DB read, no extra AI call, just one
+        more deterministic pass over data already in memory.
         """
+        # Bound the history size first. Keep the most recent messages (they
+        # include the latest user turn) and never drop the final user
+        # message. The same bounded window is used both for what's sent to
+        # Groq and for session-context derivation, so Emma never references
+        # a question that has already been trimmed out of her own context.
+        bounded_history = (
+            history[-MAX_HISTORY_MESSAGES:]
+            if len(history) > MAX_HISTORY_MESSAGES
+            else history
+        )
+
         system_prompt = self.build_system_prompt(
             practice_type,
             accent=accent,
@@ -402,13 +624,10 @@ class PromptBuilder:
             topic=topic,
             lesson_title=lesson_title,
             lesson_objectives=lesson_objectives,
+            is_final_turn=is_final_turn,
+            history=bounded_history,
         )
-        chat_history = self.map_history(history)
-
-        # Bound the history size. Keep the most recent messages (they include
-        # the latest user turn) and never drop the final user message.
-        if len(chat_history) > MAX_HISTORY_MESSAGES:
-            chat_history = chat_history[-MAX_HISTORY_MESSAGES:]
+        chat_history = self.map_history(bounded_history)
 
         return [{"role": "system", "content": system_prompt}, *chat_history]
 

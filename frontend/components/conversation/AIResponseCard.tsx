@@ -45,9 +45,12 @@ import { ApiError } from "@/features/auth/api";
  *    controls previously in `VoiceConversationPanel`, `VoiceMessageCard`,
  *    and the per-message `ChatBubble` button were removed so there is one
  *    obvious place to control Emma's voice.
- *  - Reserve a future-placeholder control (Slow playback) as a disabled,
- *    clearly-labelled "coming soon" chip so the architecture is ready for
- *    Phase M15+ without wiring it up prematurely.
+ *  - Speech Speed Control: the speed chip (Normal/Slow/Fast/Very Fast)
+ *    cycles `useOptionalVoice().speechSpeed` via `cycleSpeechSpeed()`.
+ *    State-only — it never fetches audio itself; the selected speed is
+ *    sent with the next `speak()`/`replay()` call (see
+ *    `useTtsPlayback.ts`), and persists for the current session the same
+ *    way mute already does.
  *  - Translate (AI Conversation Translation feature): tap-to-translate the
  *    latest AI reply into any of the languages in `TRANSLATION_LANGUAGES`
  *    via the existing Groq LLM infrastructure (see `translationApi.ts`).
@@ -82,8 +85,8 @@ import { ApiError } from "@/features/auth/api";
  *  - Voice control buttons have descriptive `aria-label`s.
  *  - The Translate button's `aria-label`/`title` reflect its current state
  *    (translate / translating / hide) and it exposes `aria-pressed` for its
- *    toggle behaviour. The remaining "Slow playback" placeholder chip is
- *    `aria-disabled` and announced as "coming soon".
+ *    toggle behaviour. The speed chip's `aria-label`/`title` announce the
+ *    current speed and that tapping changes it.
  */
 
 type AIResponseCardProps = {
@@ -117,6 +120,8 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
     const replay = voice?.replay ?? (() => { });
     const isMuted = voice?.isMuted ?? false;
     const toggleMute = voice?.toggleMute ?? (() => { });
+    const speechSpeedLabel = voice?.speechSpeedLabel ?? "Normal";
+    const cycleSpeechSpeed = voice?.cycleSpeechSpeed ?? (() => { });
 
     const latestAi = useMemo(() => pickLatestAiMessage(messages), [messages]);
 
@@ -429,17 +434,26 @@ function AIResponseCardInner({ className = "" }: AIResponseCardProps) {
                     )}
                     <span className="hidden sm:inline">Translate</span>
                 </button>
-                <button
-                    type="button"
-                    disabled
-                    aria-disabled="true"
-                    aria-label="Slow playback (coming soon)"
-                    title="Slow playback — coming soon"
-                    className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full bg-white/5 px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-inset ring-white/10"
-                >
-                    <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span className="hidden sm:inline">Slow</span>
-                </button>
+                {/* Speech speed control — cycles Normal → Slow → Fast →
+                    Very Fast → Normal. Same chip styling/position as
+                    before (it replaces the old disabled placeholder); only
+                    shown alongside the other voice controls since it has
+                    nothing to control without TTS. Purely a state update —
+                    it never fetches new audio by itself (see
+                    `useTtsPlayback.cycleSpeechSpeed`); the new speed takes
+                    effect on the next Listen/Replay. */}
+                {ttsEnabled && !showPlaceholder && (
+                    <button
+                        type="button"
+                        onClick={cycleSpeechSpeed}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 ring-1 ring-inset ring-white/10 transition hover:bg-white/10 active:scale-95"
+                        aria-label={`Playback speed: ${speechSpeedLabel}. Tap to change.`}
+                        title={`Playback speed: ${speechSpeedLabel} — tap to change`}
+                    >
+                        <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span className="hidden sm:inline">{speechSpeedLabel}</span>
+                    </button>
+                )}
             </footer>
 
             {/* Language selector — AI Conversation Translation feature.

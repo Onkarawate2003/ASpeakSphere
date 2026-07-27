@@ -118,6 +118,7 @@ def generate_ai_reply(
     topic: Optional[str] = None,
     lesson_title: Optional[str] = None,
     lesson_objectives: Optional[List[str]] = None,
+    is_final_turn: bool = False,
 ) -> str:
     """Generate Emma's reply for the latest user message.
 
@@ -145,6 +146,11 @@ def generate_ai_reply(
             practice. ``None`` keeps the original behaviour.
         lesson_objectives: Optional list of lesson objectives that Emma should
             guide the learner through. Ignored when ``lesson_title`` is empty.
+        is_final_turn: When ``True``, the caller has determined this is the
+            learner's last message before the session auto-completes. Emma's
+            system prompt gains wrap-up guidance so her reply doesn't end on
+            an open question that the UI is about to cut off. Purely a
+            prompt-content flag — it does not change the request made.
 
     Returns:
         Emma's reply text.
@@ -168,6 +174,7 @@ def generate_ai_reply(
         topic=topic,
         lesson_title=lesson_title,
         lesson_objectives=lesson_objectives,
+        is_final_turn=is_final_turn,
     )
 
     try:
