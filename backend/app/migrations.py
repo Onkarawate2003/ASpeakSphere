@@ -322,6 +322,49 @@ def ensure_auth_provider_column(engine: Engine) -> None:
     logger.info("auth_provider column verified on users table.")
 
 
+# --------------------------------------------------------------------- #
+# Phase 1 Summary — conversation_performance table
+# --------------------------------------------------------------------- #
+
+
+def ensure_performance_schema(engine: Engine) -> None:
+    """Ensure the Phase 1 conversation_performance table exists.
+
+    Uses ``CREATE TABLE IF NOT EXISTS`` so the operation is idempotent and
+    safe to run on every startup. Supports both SQLite and PostgreSQL.
+    """
+    with engine.connect() as conn:
+        is_sqlite = engine.dialect.name == "sqlite"
+        serial_type = "INTEGER PRIMARY KEY AUTOINCREMENT" if is_sqlite else "SERIAL PRIMARY KEY"
+        json_type = "TEXT" if is_sqlite else "JSON"
+        
+        conn.execute(
+            text(
+                f"CREATE TABLE IF NOT EXISTS conversation_performance ("
+                f"    id {serial_type},"
+                f"    conversation_id INTEGER NOT NULL UNIQUE,"
+                f"    overall_score INTEGER,"
+                f"    coach_feedback TEXT,"
+                f"    strengths TEXT,"
+                f"    areas_for_improvement TEXT,"
+                f"    next_recommendation VARCHAR(200),"
+                f"    details {json_type},"
+                f"    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,"
+                f"    FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE"
+                f")"
+            )
+        )
+        # Create index if not exists
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_conversation_performance_conversation_id "
+                "ON conversation_performance(conversation_id)"
+            )
+        )
+        conn.commit()
+    logger.info("conversation_performance table and indexes verified.")
+
+
 __all__ = [
     "ensure_lesson_columns",
     "ensure_progress_schema",
@@ -332,4 +375,5 @@ __all__ = [
     "ensure_email_verification_columns",
     "ensure_is_email_verified_column",
     "ensure_auth_provider_column",
+    "ensure_performance_schema",
 ]

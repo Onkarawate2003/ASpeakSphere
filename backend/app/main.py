@@ -36,6 +36,7 @@ from app.migrations import (  # noqa: E402
     ensure_email_verification_columns,
     ensure_is_email_verified_column,
     ensure_auth_provider_column,
+    ensure_performance_schema,
 )
 
 # Importing the models ensures their tables are registered on ``Base.metadata``
@@ -43,6 +44,7 @@ from app.migrations import (  # noqa: E402
 from app.models import (  # noqa: E402
     Conversation,
     ConversationMessage,
+    ConversationPerformance,
     DailyActivity,
     Quiz,
     QuizAttempt,
@@ -82,6 +84,8 @@ ensure_email_verification_columns(engine)
 # Google Authentication — ensure the ``auth_provider`` column exists on
 # ``users`` (idempotent). Safe on every startup.
 ensure_auth_provider_column(engine)
+# Phase 1 — ensure the conversation_performance table exists (idempotent).
+ensure_performance_schema(engine)
 
 # Phase 11 — seed the quiz content (idempotent upsert). Safe on every startup.
 from app.database import SessionLocal  # noqa: E402

@@ -15,8 +15,8 @@ trusts the frontend for this preference.
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth.dependencies import get_current_user
 from app.crud.conversations import (
@@ -44,6 +44,7 @@ from app.schemas.conversations import (
 )
 from app.schemas.messages import MessageCreate, MessageResponse, MessageSender
 from app.services.ai_service import AIServiceError, generate_ai_reply
+from app.services.summary_service import generate_and_persist_summary
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,12 @@ def conversation_to_dict(conversation: Conversation) -> dict:
     ``lesson_objectives`` is always converted from the stored TEXT to
     ``List[str]`` / ``None`` via :func:`_objectives_from_text` here — the single
     source of truth — so no endpoint ever serialises the raw string.
+
+    Phase 1 — when a ``performance`` relationship is loaded on the
+    conversation, its evaluation fields are mapped into the dict so every
+    response schema receives them transparently.
     """
+    perf = getattr(conversation, "performance", None)
     return {
         "id": conversation.id,
         "user_id": conversation.user_id,
@@ -147,6 +153,18 @@ def conversation_to_dict(conversation: Conversation) -> dict:
         "lesson_id": conversation.lesson_id,
         "lesson_title": conversation.lesson_title,
         "lesson_objectives": _objectives_from_text(conversation.lesson_objectives),
+        # Phase 1 Summary Enhancement — populated from conversation_performance when available.
+        "overall_score": perf.overall_score if perf else None,
+        "coach_feedback": perf.coach_feedback if perf else None,
+        "strengths": (
+            [s for s in perf.strengths.split("\n") if s] if perf and perf.strengths else None
+        ),
+        "areas_for_improvement": (
+            [s for s in perf.areas_for_improvement.split("\n") if s]
+            if perf and perf.areas_for_improvement
+            else None
+        ),
+        "next_recommendation": perf.next_recommendation if perf else None,
     }
 
 
@@ -200,8 +218,26 @@ def get_conversation_detail(
     Phase 10.5 — the response now carries ``xp_earned`` (the total XP awarded
     for completing this conversation, read from the ``xp_awards`` ledger) so
     the history detail page can show "XP earned" for the session.
+
+    Phase 1 — eagerly loads the ``performance`` relationship so the AI
+    evaluation fields are available inside ``conversation_to_dict`` without a
+    second query round-trip.
     """
-    conversation = _get_owned_conversation(conversation_id, current_user, db)
+    from app.models.conversations import Conversation as ConversationModel  # local to avoid circular
+    from app.models.performance import ConversationPerformance
+
+    conversation = (
+        db.query(ConversationModel)
+        .options(joinedload(ConversationModel.performance))
+        .filter(
+            ConversationModel.id == conversation_id,
+            ConversationModel.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+
     # Force the messages relationship to load while the session is open so the
     # response serializes without a lazy-load after session close.
     messages = get_messages(db, conversation_id=conversation.id)
@@ -216,6 +252,7 @@ def get_conversation_detail(
 def update_conversation_status(
     conversation_id: int,
     conversation_in: ConversationUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ConversationResponse:
@@ -238,15 +275,27 @@ def update_conversation_status(
          award).
 
     Both paths guarantee XP is awarded exactly once per conversation.
+
+    Phase 1 — AI Summary Enhancement:
+    On any transition to ``"ended"``, the AI evaluation is generated
+    asynchronously via a ``BackgroundTask`` *after* the HTTP response has
+    been returned. The completion response, XP award, and history are never
+    blocked by the AI call. If generation fails, the session is unaffected.
     """
     conversation = _get_owned_conversation(conversation_id, current_user, db)
+    transitioning_to_ended = (
+        conversation_in.status == ConversationStatus.ended
+        and conversation.status != "ended"
+    )
 
     # Convenience: when the caller transitions to "ended" without supplying an
     # explicit ended_at/duration, finalise the session automatically (this
     # also awards XP).
-    if conversation_in.status == ConversationStatus.ended and conversation.status != "ended":
+    if transitioning_to_ended:
         if conversation_in.ended_at is None and conversation_in.duration_seconds is None:
             conversation = complete_conversation(db, conversation)
+            # Phase 1 — schedule AI summary generation in the background.
+            background_tasks.add_task(generate_and_persist_summary, conversation.id)
             return conversation_to_response(conversation)
 
     conversation = update_conversation(db, conversation=conversation, conversation_in=conversation_in)
@@ -261,6 +310,10 @@ def update_conversation_status(
         and conversation.status == "ended"
     ):
         conversation = complete_conversation(db, conversation)
+
+    # Phase 1 — schedule AI summary generation for any ended transition.
+    if transitioning_to_ended:
+        background_tasks.add_task(generate_and_persist_summary, conversation.id)
 
     return conversation_to_response(conversation)
 

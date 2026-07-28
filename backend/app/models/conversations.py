@@ -69,6 +69,14 @@ class Conversation(Base):
         order_by="ConversationMessage.id",
     )
 
+    # One-to-one: a conversation has at most one performance summary record.
+    performance = relationship(
+        "ConversationPerformance",
+        back_populates="conversation",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<Conversation id={self.id} user_id={self.user_id} practice_type={self.practice_type!r} status={self.status!r}>"
 

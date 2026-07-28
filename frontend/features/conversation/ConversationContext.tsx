@@ -210,6 +210,17 @@ export function ConversationProvider({
         lessonId ?? null,
     );
 
+    // Phase 1 — AI Session Review state.
+    const [overallScore, setOverallScore] = useState<number | null>(null);
+    const [coachFeedback, setCoachFeedback] = useState<string | null>(null);
+    const [strengths, setStrengths] = useState<string[] | null>(null);
+    const [areasForImprovement, setAreasForImprovement] = useState<string[] | null>(null);
+    const [nextRecommendation, setNextRecommendation] = useState<string | null>(null);
+    const [isSummaryLoading, setIsSummaryLoading] = useState<boolean>(false);
+    // Tracks how many polling attempts have been made (max 10).
+    const summaryPollCountRef = useRef<number>(0);
+    const summaryPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     // Refs for timers, rotation, and synchronous guards.
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -277,6 +288,13 @@ export function ConversationProvider({
                 initialDetail.lesson_objectives ?? lessonObjectives ?? null,
             );
             setActiveLessonId(initialDetail.lesson_id ?? lessonId ?? null);
+
+            // Phase 1 — hydrate AI summary fields from the pre-fetched detail.
+            setOverallScore(initialDetail.overall_score ?? null);
+            setCoachFeedback(initialDetail.coach_feedback ?? null);
+            setStrengths(initialDetail.strengths ?? null);
+            setAreasForImprovement(initialDetail.areas_for_improvement ?? null);
+            setNextRecommendation(initialDetail.next_recommendation ?? null);
 
             const greeting: ConversationMessage = {
                 id: generateId(),
@@ -359,17 +377,37 @@ export function ConversationProvider({
      * Persist the completed session to the backend (Task 6).
      * Best-effort: a toast is shown on failure but the UI completion is
      * not blocked.
+     *
+     * Phase 1 — after a successful PATCH, set isSummaryLoading = true so
+     * the AI Session Review card shows a skeleton. Actual polling begins
+     * via the effect below once isCompleted is true.
      */
     const completeSession = useCallback(async () => {
         if (conversationIdRef.current === null) return;
         try {
-            await completeConversationApi(
+            const result = await completeConversationApi(
                 conversationIdRef.current,
                 elapsedSecondsRef.current,
             );
             // Phase 10 — refresh the user's XP/level/streak now that the
             // backend has awarded completion XP (idempotent on the server).
             void refreshProgress();
+
+            // Phase 1 — hydrate any summary fields that might already be
+            // in the PATCH response (edge-case: very fast background task).
+            if (result) {
+                setOverallScore(result.overall_score ?? null);
+                setCoachFeedback(result.coach_feedback ?? null);
+                setStrengths(result.strengths ?? null);
+                setAreasForImprovement(result.areas_for_improvement ?? null);
+                setNextRecommendation(result.next_recommendation ?? null);
+            }
+            // If coach_feedback is still null, the background task is still
+            // running — mark as loading so polling can start.
+            if (!result?.coach_feedback) {
+                setIsSummaryLoading(true);
+                summaryPollCountRef.current = 0;
+            }
         } catch {
             toast.error("Could not save the session summary. Please try again later.");
         }
@@ -431,7 +469,9 @@ export function ConversationProvider({
                             clearInterval(intervalRef.current);
                             intervalRef.current = null;
                         }
-                        completeSession();
+                        // Phase 1 fix — await so isSummaryLoading is set before
+                        // AISessionReview renders (prevents a brief fallback flash).
+                        await completeSession();
                     }
                 } catch (error) {
                     // POST failed — roll back the optimistic message.
@@ -651,25 +691,13 @@ export function ConversationProvider({
         setIsCompleted(true);
 
         if (conversationIdRef.current !== null && !wasAlreadyCompleted) {
-            isLoadingRef.current = true;
-            setIsLoading(true);
-            try {
-                await completeConversationApi(
-                    conversationIdRef.current,
-                    elapsedSecondsRef.current,
-                );
-                // Phase 10 — refresh XP/level/streak after the backend
-                // awards completion XP (idempotent server-side).
-                void refreshProgress();
-            } catch {
-                toast.error("Could not save the session. Please try again later.");
-            } finally {
-                isLoadingRef.current = false;
-                setIsLoading(false);
-            }
+            // Phase 1 fix — delegate to completeSession() so isSummaryLoading
+            // is set and the polling effect starts for manually-ended sessions.
+            // completeSession() already handles XP refresh and error toasts.
+            await completeSession();
         }
         clearStoredConversation();
-    }, [refreshProgress]);
+    }, [completeSession]);
 
     /**
      * Append a user message optimistically, then persist it to the backend
@@ -730,6 +758,13 @@ export function ConversationProvider({
                 );
                 setActiveLessonId(detail.lesson_id ?? lessonId ?? null);
 
+                // Phase 1 — hydrate AI summary fields from the loaded detail.
+                setOverallScore(detail.overall_score ?? null);
+                setCoachFeedback(detail.coach_feedback ?? null);
+                setStrengths(detail.strengths ?? null);
+                setAreasForImprovement(detail.areas_for_improvement ?? null);
+                setNextRecommendation(detail.next_recommendation ?? null);
+
                 const greeting: ConversationMessage = {
                     id: generateId(),
                     role: "ai",
@@ -757,6 +792,14 @@ export function ConversationProvider({
                     const dur = detail.duration_seconds ?? 0;
                     setElapsedSeconds(dur);
                     elapsedSecondsRef.current = dur;
+
+                    // Phase 1 — if the conversation is ended but has no
+                    // coach_feedback yet, the background task may still be
+                    // running; start polling.
+                    if (!detail.coach_feedback) {
+                        setIsSummaryLoading(true);
+                        summaryPollCountRef.current = 0;
+                    }
                 } else {
                     setStatus("active");
                     const shouldComplete = userCount >= MAX_USER_MESSAGES;
@@ -786,6 +829,54 @@ export function ConversationProvider({
         ],
     );
 
+    // Phase 1 — Polling effect: when isSummaryLoading is true (session just
+    // completed but the background AI task hasn't finished yet), fetch the
+    // conversation every 3 seconds up to 10 times until coach_feedback appears.
+    useEffect(() => {
+        if (!isSummaryLoading || !conversationId) return;
+
+        const MAX_POLLS = 10;
+        const POLL_INTERVAL_MS = 3000;
+
+        const poll = async () => {
+            try {
+                const detail = await getConversationApi(conversationId);
+                if (detail.coach_feedback) {
+                    // Summary is ready — hydrate and stop polling.
+                    setOverallScore(detail.overall_score ?? null);
+                    setCoachFeedback(detail.coach_feedback);
+                    setStrengths(detail.strengths ?? null);
+                    setAreasForImprovement(detail.areas_for_improvement ?? null);
+                    setNextRecommendation(detail.next_recommendation ?? null);
+                    setIsSummaryLoading(false);
+                    summaryPollCountRef.current = 0;
+                    return;
+                }
+            } catch {
+                // Silent — polling failure should not surface an error to the user.
+            }
+
+            summaryPollCountRef.current += 1;
+            if (summaryPollCountRef.current >= MAX_POLLS) {
+                // Gave up — stop polling and leave fields as null (fallback UI shown).
+                setIsSummaryLoading(false);
+                return;
+            }
+
+            summaryPollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        };
+
+        // Kick off the first poll after the initial delay.
+        summaryPollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+
+        return () => {
+            if (summaryPollTimerRef.current) {
+                clearTimeout(summaryPollTimerRef.current);
+                summaryPollTimerRef.current = null;
+            }
+        };
+    }, [isSummaryLoading, conversationId]);
+
     const value = useMemo<ConversationContextValue>(
         () => ({
             practiceType,
@@ -809,6 +900,13 @@ export function ConversationProvider({
             endSession,
             sendMessage,
             loadConversation,
+            // Phase 1 — AI Session Review
+            overallScore,
+            coachFeedback,
+            strengths,
+            areasForImprovement,
+            nextRecommendation,
+            isSummaryLoading,
         }),
         [
             practiceType,
@@ -832,6 +930,13 @@ export function ConversationProvider({
             endSession,
             sendMessage,
             loadConversation,
+            // Phase 1 — AI Session Review
+            overallScore,
+            coachFeedback,
+            strengths,
+            areasForImprovement,
+            nextRecommendation,
+            isSummaryLoading,
         ],
     );
 

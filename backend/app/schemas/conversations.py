@@ -105,6 +105,13 @@ class ConversationSummary(BaseModel):
     # "XP earned" per session without duplicating the award logic.
     xp_earned: int = 0
 
+    # Phase 1 Summary Enhancement columns
+    overall_score: Optional[int] = None
+    coach_feedback: Optional[str] = None
+    strengths: Optional[List[str]] = None
+    areas_for_improvement: Optional[List[str]] = None
+    next_recommendation: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -131,6 +138,13 @@ class ConversationListItem(BaseModel):
     # :class:`ConversationSummary`).
     xp_earned: int = 0
 
+    # Phase 1 Summary Enhancement columns
+    overall_score: Optional[int] = None
+    coach_feedback: Optional[str] = None
+    strengths: Optional[List[str]] = None
+    areas_for_improvement: Optional[List[str]] = None
+    next_recommendation: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -149,6 +163,13 @@ class ConversationResponse(BaseModel):
     lesson_id: Optional[str] = None
     lesson_title: Optional[str] = None
     lesson_objectives: Optional[List[str]] = None
+
+    # Phase 1 Summary Enhancement columns
+    overall_score: Optional[int] = None
+    coach_feedback: Optional[str] = None
+    strengths: Optional[List[str]] = None
+    areas_for_improvement: Optional[List[str]] = None
+    next_recommendation: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -177,8 +198,12 @@ class ConversationDetail(BaseModel):
     xp_earned: int = 0
     messages: List[MessageResponse] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    # Phase 1 Summary Enhancement columns
+    overall_score: Optional[int] = None
+    coach_feedback: Optional[str] = None
+    strengths: Optional[List[str]] = None
+    areas_for_improvement: Optional[List[str]] = None
+    next_recommendation: Optional[str] = None
 
 
 __all__ = [

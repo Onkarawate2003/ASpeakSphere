@@ -256,4 +256,200 @@ def generate_ai_reply(
     return cleaned
 
 
-__all__ = ["AIServiceError", "generate_ai_reply"]
+# ---------------------------------------------------------------------------
+# Conversation summary generation (Phase 1 & Phase 2 — Practice-Aware AI Summary)
+# ---------------------------------------------------------------------------
+
+# Longer timeout for the batch evaluation call — it analyses the full history.
+GROQ_SUMMARY_TIMEOUT_SECONDS: float = 90.0
+
+_MODE_PROMPT_GUIDELINES = {
+    "grammar": (
+        "Focus your assessment specifically on GRAMMAR & SENTENCE STRUCTURE. "
+        "Evaluate grammatical accuracy, verb tense consistency, clause structure, "
+        "common grammar mistakes, and rules that need revision."
+    ),
+    "vocabulary": (
+        "Focus your assessment specifically on VOCABULARY & WORD CHOICE. "
+        "Evaluate vocabulary richness, word variety, contextual appropriateness, "
+        "repetition of basic words, and opportunities for advanced vocabulary."
+    ),
+    "pronunciation": (
+        "Focus your assessment specifically on PRONUNCIATION & SPEECH CLARITY. "
+        "Evaluate phonetic clarity, word stress, intonation patterns, difficult "
+        "words, and general speech articulation derived from the text input."
+    ),
+    "speaking": (
+        "Focus your assessment specifically on SPEAKING FLUENCY & EXPRESSION. "
+        "Evaluate speaking confidence, pace of expression, sentence formation, "
+        "spontaneity, and overall communication effectiveness."
+    ),
+    "listening": (
+        "Focus your assessment specifically on LISTENING COMPREHENSION. "
+        "Evaluate how accurately the learner understood questions and prompts, "
+        "whether key details were retained, and their ability to follow complex statements."
+    ),
+    "conversation": (
+        "Focus your assessment specifically on CONVERSATIONAL FLOW & ENGAGEMENT. "
+        "Evaluate turn-taking, relevance of responses, natural communication style, "
+        "topic engagement, and active dialogue participation."
+    ),
+    "interview": (
+        "Focus your assessment specifically on PROFESSIONAL INTERVIEW COMMUNICATION. "
+        "Evaluate professional tone, structured answer format (e.g. STAR method), "
+        "confidence, clarity, and conciseness of response."
+    ),
+}
+
+
+def _build_summary_system_prompt(practice_type: Optional[str] = None, lesson_title: Optional[str] = None) -> str:
+    mode_key = (practice_type or "").lower().strip()
+    mode_guidelines = _MODE_PROMPT_GUIDELINES.get(
+        mode_key,
+        (
+            "Provide a balanced overall assessment of the learner's English performance, "
+            "focusing on communication clarity, vocabulary, grammar, and fluency."
+        ),
+    )
+
+    lesson_context = f" The session focused on the lesson: '{lesson_title}'." if lesson_title else ""
+
+    return f"""You are an expert English language coach. \
+A learner just completed a practice session in '{mode_key or 'general'}' practice mode with an AI conversation partner.{lesson_context} \
+Your job is to analyse the learner's messages and produce a concise, constructive, practice-mode-tailored evaluation.
+
+Evaluation Focus:
+{mode_guidelines}
+
+Respond ONLY with a single valid JSON object — no prose, no markdown fences — \
+with exactly these keys:
+{{
+  "overall_score": <integer 0-100>,
+  "coach_feedback": "<2-3 sentence assessment tailored to the practice mode>",
+  "strengths": ["<mode-specific strength 1>", "<mode-specific strength 2>", "<mode-specific strength 3>"],
+  "areas_for_improvement": ["<mode-specific area 1>", "<mode-specific area 2>", "<mode-specific area 3>"],
+  "next_recommendation": "<one concrete next-step suggestion tailored to this practice mode>"
+}}
+
+Rules:
+- overall_score is 0-100 (100 = native-like mastery in this mode).
+- coach_feedback must be warm, encouraging, specific, and directly reflect the '{mode_key or 'general'}' practice focus.
+- Each list must have 2-4 items — short strings (under 120 characters).
+- Do NOT include the AI assistant's messages in your evaluation — only assess the learner.
+"""
+
+
+def generate_conversation_summary(
+    history: List[ConversationMessage],
+    practice_type: Optional[str] = None,
+    lesson_title: Optional[str] = None,
+) -> dict:
+    """Analyse the conversation transcript and return a structured evaluation.
+
+    Phase 2 — Incorporates Practice Mode specific instructions into the Groq prompt.
+
+    Args:
+        history: The complete ordered message history for the conversation.
+        practice_type: The practice mode string (e.g., 'speaking', 'grammar', 'vocabulary', etc.).
+        lesson_title: Optional title of the selected lesson.
+
+    Returns:
+        A dict with keys: ``overall_score``, ``coach_feedback``,
+        ``strengths``, ``areas_for_improvement``, ``next_recommendation``.
+
+    Raises:
+        AIServiceError: If Groq cannot produce a valid JSON evaluation.
+    """
+    import json  # local import — only needed for summary path
+
+    # Compose the transcript of learner-only messages for evaluation.
+    # NOTE: the ORM model uses `.sender` (not `.role`) and `.message` (not `.content`).
+    learner_turns = [
+        f"Turn {i + 1}: {msg.message}"
+        for i, msg in enumerate(history)
+        if msg.sender == "user"
+    ]
+
+    if not learner_turns:
+        raise AIServiceError(
+            "Cannot evaluate a conversation with no learner messages.",
+            status_code=400,
+        )
+
+    transcript_text = "\n".join(learner_turns)
+    system_prompt = _build_summary_system_prompt(practice_type=practice_type, lesson_title=lesson_title)
+    user_prompt = (
+        f"Here are the learner's messages from this {practice_type or 'general'} practice session:\n\n"
+        f"{transcript_text}\n\n"
+        f"Produce the JSON evaluation now."
+    )
+
+    try:
+        # Use a fresh client with the longer summary timeout.
+        if not GROQ_API_KEY:
+            raise AIServiceError(
+                "The AI service is not configured. Set GROQ_API_KEY.",
+                status_code=503,
+            )
+        summary_client = Groq(api_key=GROQ_API_KEY, timeout=GROQ_SUMMARY_TIMEOUT_SECONDS)
+        completion = summary_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=512,
+            temperature=0.3,  # Low temperature for consistent, structured output
+            response_format={"type": "json_object"},
+        )
+    except AIServiceError:
+        raise
+    except RateLimitError as exc:
+        logger.warning("Groq rate limit exceeded during summary generation: %s", exc)
+        raise AIServiceError("Rate limit exceeded during summary generation.", status_code=429) from exc
+    except APITimeoutError as exc:
+        logger.warning("Groq summary request timed out: %s", exc)
+        raise AIServiceError("Summary generation timed out.", status_code=504) from exc
+    except APIConnectionError as exc:
+        logger.error("Could not connect to Groq for summary: %s", exc)
+        raise AIServiceError("Could not reach AI service for summary.", status_code=503) from exc
+    except APIStatusError as exc:
+        status_code = getattr(exc, "status_code", None)
+        logger.error("Groq API error during summary (status %s): %s", status_code, exc)
+        raise AIServiceError("AI service error during summary generation.", status_code=502) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected error during summary generation: %s", exc)
+        raise AIServiceError("Unexpected error during summary generation.", status_code=500) from exc
+
+    try:
+        raw = completion.choices[0].message.content or ""
+        result = json.loads(raw)
+    except (AttributeError, IndexError, json.JSONDecodeError) as exc:
+        logger.error("Could not parse Groq summary JSON: %r", getattr(completion, "choices", None))
+        raise AIServiceError("AI returned an unparseable summary response.", status_code=502) from exc
+
+    # Validate required keys are present; coerce to expected types.
+    required_keys = {
+        "overall_score", "coach_feedback", "strengths",
+        "areas_for_improvement", "next_recommendation",
+    }
+    missing = required_keys - set(result.keys())
+    if missing:
+        logger.error("Groq summary JSON missing keys %s: %r", missing, result)
+        raise AIServiceError(
+            f"AI summary response is missing required fields: {missing}",
+            status_code=502,
+        )
+
+    # Normalise types so callers get clean data.
+    result["overall_score"] = max(0, min(100, int(result["overall_score"])))
+    result["strengths"] = [str(s) for s in result.get("strengths", [])]
+    result["areas_for_improvement"] = [str(s) for s in result.get("areas_for_improvement", [])]
+    result["coach_feedback"] = str(result.get("coach_feedback", "")).strip()
+    result["next_recommendation"] = str(result.get("next_recommendation", "")).strip()
+
+    return result
+
+
+__all__ = ["AIServiceError", "generate_ai_reply", "generate_conversation_summary"]
+

@@ -12,7 +12,6 @@ import {
     History,
     ListChecks,
     PlayCircle,
-    Sparkles,
 } from "lucide-react";
 
 import { DashboardLayout } from "../../../../components/dashboard";
@@ -25,6 +24,7 @@ import { ConversationProvider } from "@/features/conversation/ConversationContex
 import { prepareContinueConversation } from "@/features/conversation/ConversationContext";
 import ConversationSummary from "@/components/conversation/ConversationSummary";
 import ConversationTranscript from "@/components/conversation/ConversationTranscript";
+import { AISessionReview } from "@/components/conversation/AISessionReview";
 import { getConversation } from "@/features/conversation/api";
 import type { ConversationDetailDTO } from "@/features/conversation/types";
 import {
@@ -374,32 +374,11 @@ function ConversationDetailContent({
                 compact ConversationTimeline snippet view. */}
             <ConversationTranscript />
 
-            {/* Phase 10.5 PART 12 — Reserved "AI Session Review" placeholder.
-                Empty for now; Phase 11 will populate this with AI-generated
-                feedback on the learner's performance. Kept here so the layout
-                is ready and the section is visibly reserved. */}
-            <section
-                className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/50 p-5"
-                aria-label="AI Session Review (coming soon)"
-            >
-                <div className="flex items-center gap-2">
-                    <Sparkles
-                        className="h-4 w-4 text-slate-400"
-                        aria-hidden="true"
-                    />
-                    <h2 className="text-sm font-extrabold tracking-tight text-slate-500">
-                        AI Session Review
-                    </h2>
-                    <span className="ml-auto rounded-full bg-slate-200 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                        Coming soon
-                    </span>
-                </div>
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">
-                    An AI-powered review of your conversation — including
-                    strengths, areas to improve, and suggested next steps —
-                    will appear here in a future update.
-                </p>
-            </section>
+            {/* Phase 1 — AI Session Review. Reads data from ConversationContext
+                (hydrated above by the initialDetail prop). Shows a shimmer skeleton
+                while the background AI task is running, then resolves into the full
+                coaching card. Falls back gracefully for pre-Phase-1 sessions. */}
+            <AISessionReview />
         </div>
     );
 }
