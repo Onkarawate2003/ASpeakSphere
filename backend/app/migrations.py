@@ -365,6 +365,109 @@ def ensure_performance_schema(engine: Engine) -> None:
     logger.info("conversation_performance table and indexes verified.")
 
 
+# --------------------------------------------------------------------- #
+# Phase 1.8 — vocab_word_mastery table
+# --------------------------------------------------------------------- #
+
+
+def ensure_vocab_mastery_schema(engine: Engine) -> None:
+    """Ensure vocab_word_mastery table and its indexes exist.
+
+    Uses ``CREATE TABLE IF NOT EXISTS`` so the operation is idempotent and
+    safe to run on every startup. Supports both SQLite and PostgreSQL.
+    """
+    with engine.connect() as conn:
+        is_sqlite = engine.dialect.name == "sqlite"
+        serial_type = "INTEGER PRIMARY KEY AUTOINCREMENT" if is_sqlite else "SERIAL PRIMARY KEY"
+
+        conn.execute(
+            text(
+                f"CREATE TABLE IF NOT EXISTS vocab_word_mastery ("
+                f"    id {serial_type},"
+                f"    user_id INTEGER NOT NULL,"
+                f"    word VARCHAR(255) NOT NULL,"
+                f"    mastery_status VARCHAR(50) DEFAULT 'needs_revision' NOT NULL,"
+                f"    correct_attempts INTEGER DEFAULT 0 NOT NULL,"
+                f"    total_attempts INTEGER DEFAULT 0 NOT NULL,"
+                f"    consecutive_correct INTEGER DEFAULT 0 NOT NULL,"
+                f"    last_tested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,"
+                f"    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,"
+                f"    CONSTRAINT uq_vocab_word_mastery_user_word UNIQUE (user_id, word),"
+                f"    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE"
+                f")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_vocab_word_mastery_user_id "
+                "ON vocab_word_mastery(user_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_vocab_word_mastery_word "
+                "ON vocab_word_mastery(word)"
+            )
+        )
+        conn.commit()
+    logger.info("vocab_word_mastery table and indexes verified.")
+
+
+
+# --------------------------------------------------------------------- #
+# Phase 1.6 — Personalized Daily Word + preference_signature column
+# --------------------------------------------------------------------- #
+
+
+def ensure_daily_word_signature_column(engine: Engine) -> None:
+    """Ensure the daily_word_recommendations table exists and has the
+    preference_signature column.
+
+    Uses ``CREATE TABLE IF NOT EXISTS`` and ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS``
+    so the operation is fully idempotent and safe to run on every startup.
+    """
+    with engine.connect() as conn:
+        is_sqlite = engine.dialect.name == "sqlite"
+        serial_type = "INTEGER PRIMARY KEY AUTOINCREMENT" if is_sqlite else "SERIAL PRIMARY KEY"
+
+        # Ensure the table itself exists (may have been created by create_all,
+        # but we guarantee it here too for safety).
+        conn.execute(
+            text(
+                f"CREATE TABLE IF NOT EXISTS daily_word_recommendations ("
+                f"    id {serial_type},"
+                f"    user_id INTEGER NOT NULL,"
+                f"    date VARCHAR(10) NOT NULL,"
+                f"    topic VARCHAR(200),"
+                f"    learning_goal VARCHAR(200),"
+                f"    level VARCHAR(50),"
+                f"    focus_area VARCHAR(200),"
+                f"    preference_signature VARCHAR(255),"
+                f"    word VARCHAR(255) NOT NULL,"
+                f"    pronunciation TEXT,"
+                f"    part_of_speech VARCHAR(100),"
+                f"    meaning TEXT,"
+                f"    example TEXT,"
+                f"    synonyms TEXT,"
+                f"    antonyms TEXT,"
+                f"    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,"
+                f"    CONSTRAINT uq_daily_word_user_date UNIQUE (user_id, date),"
+                f"    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE"
+                f")"
+            )
+        )
+
+        # Ensure the preference_signature column exists on older installs.
+        conn.execute(
+            text(
+                "ALTER TABLE daily_word_recommendations "
+                "ADD COLUMN IF NOT EXISTS preference_signature VARCHAR(255)"
+            )
+        )
+        conn.commit()
+    logger.info("daily_word_recommendations table and preference_signature column verified.")
+
+
 __all__ = [
     "ensure_lesson_columns",
     "ensure_progress_schema",
@@ -376,4 +479,8 @@ __all__ = [
     "ensure_is_email_verified_column",
     "ensure_auth_provider_column",
     "ensure_performance_schema",
+    "ensure_daily_word_signature_column",
+    "ensure_vocab_mastery_schema",
 ]
+
+

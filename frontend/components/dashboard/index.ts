@@ -6,6 +6,7 @@ export { default as EmptyState } from "./EmptyState";
 export { default as ErrorState } from "./ErrorState";
 export { default as LoadingSkeleton } from "./LoadingSkeleton";
 export { default as PracticeCard } from "./PracticeCard";
+export { default as PersonalizedDailyWordCard } from "./PersonalizedDailyWordCard";
 export { default as ProfileSummary } from "./ProfileSummary";
 export { default as ProgressCard } from "./ProgressCard";
 export { default as QuizAnalyticsCard } from "./QuizAnalyticsCard";

@@ -103,6 +103,12 @@ def _get_client() -> Groq:
     return _client
 
 
+def get_groq_client() -> Groq:
+    """Public accessor returning the shared :class:`Groq` client instance."""
+    return _get_client()
+
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------

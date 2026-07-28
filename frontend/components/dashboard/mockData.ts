@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+    Award,
     BarChart3,
     BookOpen,
     GraduationCap,
@@ -10,8 +11,10 @@ import {
     Lock,
     Mic2,
     Settings,
+    Star,
     UserRound,
     Volume2,
+    Zap,
 } from "lucide-react";
 
 export type DashboardNavItem = {
@@ -41,6 +44,10 @@ export type PracticeCategory = {
 export const dashboardNavItems: DashboardNavItem[] = [
     { label: "Home", href: "/dashboard", icon: Home },
     { label: "Practice", href: "/dashboard/practice", icon: Mic2 },
+    { label: "Vocabulary Coach", href: "/dashboard/vocabulary", icon: BookOpen },
+    { label: "My Vocabulary", href: "/dashboard/my-vocabulary", icon: Star },
+    { label: "Vocabulary Quiz", href: "/dashboard/vocabulary/quiz", icon: Zap },
+    { label: "Vocabulary Progress", href: "/dashboard/vocabulary/progress", icon: Award },
     { label: "History", href: "/dashboard/history", icon: History },
     { label: "Statistics", href: "/dashboard/stats", icon: BarChart3 },
     { label: "Settings", href: "/dashboard/settings", icon: Settings },

@@ -99,6 +99,28 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    # Vocabulary Coach Phase 1.5A — one-to-many: a user owns every saved word.
+    # Deleting a user cascades to their saved vocabulary entries.
+    saved_words = relationship(
+        "SavedWord",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    # Vocabulary Coach Phase 1.6 — one-to-many: user owns daily word recommendations.
+    daily_word_recommendations = relationship(
+        "DailyWordRecommendation",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    # Vocabulary Coach Phase 1.8 — one-to-many: user owns vocab word masteries.
+    vocab_masteries = relationship(
+        "VocabWordMastery",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
     @property
     def onboarding_completed(self) -> bool:
         """Whether the user has finished onboarding.

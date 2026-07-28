@@ -11,6 +11,7 @@ import {
     RecentActivity,
     StatisticsCard,
     WelcomeCard,
+    PersonalizedDailyWordCard,
     LoadingSkeleton,
     ErrorState,
     EmptyState,
@@ -64,21 +65,25 @@ export default function DashboardPage() {
 
     return (
         <DashboardLayout>
-            <WelcomeCard />
+            <div className="space-y-6">
+                <WelcomeCard />
 
-            <div className="grid items-start gap-6 xl:grid-cols-[1fr_360px]">
-                <div className="grid gap-6 md:grid-cols-2">
-                    <DailyGoalCard />
-                    <ProgressCard />
+                <PersonalizedDailyWordCard />
+
+                <div className="grid items-start gap-6 xl:grid-cols-[1fr_360px]">
+                    <div className="grid gap-6 md:grid-cols-2">
+                        <DailyGoalCard />
+                        <ProgressCard />
+                    </div>
+
+                    <aside className="space-y-6">
+                        <PracticeCard />
+                        <StatisticsCard />
+                        <RecentActivity />
+                        <AchievementsCard />
+                        <ProfileSummary />
+                    </aside>
                 </div>
-
-                <aside className="space-y-6">
-                    <PracticeCard />
-                    <StatisticsCard />
-                    <RecentActivity />
-                    <AchievementsCard />
-                    <ProfileSummary />
-                </aside>
             </div>
         </DashboardLayout>
     );

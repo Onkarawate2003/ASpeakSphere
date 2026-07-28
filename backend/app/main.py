@@ -24,6 +24,7 @@ from app.api.v1 import (  # noqa: E402
     speech,
     stats,
     translation,
+    vocabulary,
 )
 from app.database import Base, engine  # noqa: E402
 from app.migrations import (  # noqa: E402
@@ -37,6 +38,8 @@ from app.migrations import (  # noqa: E402
     ensure_is_email_verified_column,
     ensure_auth_provider_column,
     ensure_performance_schema,
+    ensure_daily_word_signature_column,
+    ensure_vocab_mastery_schema,
 )
 
 # Importing the models ensures their tables are registered on ``Base.metadata``
@@ -46,12 +49,15 @@ from app.models import (  # noqa: E402
     ConversationMessage,
     ConversationPerformance,
     DailyActivity,
+    DailyWordRecommendation,
     Quiz,
     QuizAttempt,
     QuizQuestion,
+    SavedWord,
     User,
     UserPreferences,
     UserProgress,
+    VocabWordMastery,
     XpAward,
 )
 
@@ -86,6 +92,10 @@ ensure_email_verification_columns(engine)
 ensure_auth_provider_column(engine)
 # Phase 1 — ensure the conversation_performance table exists (idempotent).
 ensure_performance_schema(engine)
+# Phase 1.6 — ensure preference_signature column exists on daily_word_recommendations (idempotent).
+ensure_daily_word_signature_column(engine)
+# Phase 1.8 — ensure vocab_word_mastery table exists (idempotent).
+ensure_vocab_mastery_schema(engine)
 
 # Phase 11 — seed the quiz content (idempotent upsert). Safe on every startup.
 from app.database import SessionLocal  # noqa: E402
@@ -140,6 +150,9 @@ app.include_router(stats.router, prefix="/api/v1")
 # speech.py/conversations.py). Mounted under /api/v1 alongside the other
 # authenticated feature routers.
 app.include_router(translation.router, prefix="/api/v1")
+# Vocabulary Coach feature (Phase 1: Foundation)
+app.include_router(vocabulary.router, prefix="/api/v1")
+
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
