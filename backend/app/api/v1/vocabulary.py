@@ -4,6 +4,8 @@ Phase 1: Foundation.
 Phase 1.5A: Save Word to Personal Vocabulary.
 """
 
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -183,6 +185,30 @@ def get_save_status(
         .first()
     )
     return SavedWordStatusResponse(word=word, is_saved=bool(exists))
+
+
+@router.get(
+    "/saved",
+    response_model=List[SavedWordResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all words saved by the current user",
+    description=(
+        "Returns every vocabulary word saved by the authenticated user, "
+        "newest first. Used by the 'My Vocabulary' page (web and Android) "
+        "to render the saved-words list."
+    ),
+)
+def list_saved_words(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> List[SavedWordResponse]:
+    """Return all saved vocabulary words for the authenticated user, newest first."""
+    return (
+        db.query(SavedWord)
+        .filter(SavedWord.user_id == current_user.id)
+        .order_by(SavedWord.created_at.desc())
+        .all()
+    )
 
 
 # ---------------------------------------------------------------------------

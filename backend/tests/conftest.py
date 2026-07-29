@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.v1 import auth, progress, quizzes
+from app.api.v1 import auth, progress, quizzes, vocabulary
 from app.api.v1 import conversations as conversations_api
 from app.database import Base, get_db
 from app.models import Conversation, ConversationMessage, Quiz, QuizAttempt, QuizQuestion, User, UserPreferences, UserProgress, XpAward
@@ -35,6 +35,7 @@ def app() -> Generator[FastAPI, None, None]:
     test_app.include_router(auth.router, prefix="/api/v1")
     test_app.include_router(progress.router, prefix="/api/v1")
     test_app.include_router(quizzes.router, prefix="/api/v1")
+    test_app.include_router(vocabulary.router, prefix="/api/v1")
     test_app.include_router(conversations_api.router, prefix="/api")
     def override_get_db() -> Generator[Session, None, None]:
         db = TestingSessionLocal()

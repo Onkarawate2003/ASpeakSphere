@@ -1,6 +1,70 @@
 from unittest.mock import MagicMock, patch
+
 from app.schemas.vocabulary import VocabularySearchResponse
 from app.services.ai_service import AIServiceError
+
+
+def _save_word(client, headers, word="serendipity"):
+    """Helper: save a word via the API and return the response JSON."""
+    payload = {
+        "word": word,
+        "pronunciation": "/ˌsɛrənˈdɪpɪti/",
+        "part_of_speech": "Noun",
+        "meaning": "A pleasant surprise.",
+        "example": "Finding this café was pure serendipity.",
+        "synonyms": ["fluke", "chance"],
+        "antonyms": ["plan"],
+    }
+    response = client.post("/api/v1/vocabulary/save", json=payload, headers=headers)
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_list_saved_words_empty(client, auth_headers):
+    """A user with no saved words gets an empty list (not 404)."""
+    response = client.get("/api/v1/vocabulary/saved", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_saved_words_returns_user_words_newest_first(client, auth_headers):
+    """Saved words are returned newest-first with the full SavedWordResponse shape."""
+    first = _save_word(client, auth_headers, word="resilient")
+    second = _save_word(client, auth_headers, word="eloquent")
+
+    response = client.get("/api/v1/vocabulary/saved", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    # Newest first
+    assert data[0]["word"] == "eloquent"
+    assert data[1]["word"] == "resilient"
+    # Response shape matches SavedWordResponse
+    entry = data[0]
+    assert set(entry.keys()) == {
+        "id", "user_id", "word", "pronunciation", "part_of_speech",
+        "meaning", "example", "synonyms", "antonyms", "created_at",
+    }
+    assert entry["synonyms"] == second["synonyms"]
+    assert entry["antonyms"] == second["antonyms"]
+
+
+def test_list_saved_words_isolates_users(client, auth_headers, second_auth_headers):
+    """A user only sees their own saved words, never another user's."""
+    _save_word(client, auth_headers, word="resilient")
+    _save_word(client, second_auth_headers, word="eloquent")
+
+    response = client.get("/api/v1/vocabulary/saved", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["word"] == "resilient"
+
+
+def test_list_saved_words_requires_auth(client):
+    """The endpoint is protected — no token yields 401, not the data."""
+    response = client.get("/api/v1/vocabulary/saved")
+    assert response.status_code == 401
 
 
 def test_vocabulary_search_empty_word_validation(client, auth_headers):
