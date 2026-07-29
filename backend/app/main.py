@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from app.api.v1 import (  # noqa: E402
     auth,
     conversations,
+    grammar,
     onboarding,
     progress,
     quizzes,
@@ -152,6 +153,8 @@ app.include_router(stats.router, prefix="/api/v1")
 app.include_router(translation.router, prefix="/api/v1")
 # Vocabulary Coach feature (Phase 1: Foundation)
 app.include_router(vocabulary.router, prefix="/api/v1")
+# Grammar Coach feature — deterministic mock feedback endpoint.
+app.include_router(grammar.router, prefix="/api/v1")
 
 
 from fastapi import Depends

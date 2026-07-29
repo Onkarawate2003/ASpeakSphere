@@ -1,0 +1,208 @@
+[
+    {
+        "id": "sentence-foundations",
+        "title": "Sentence Foundations",
+        "description": "Learn the building blocks of clear English sentences.",
+        "topics": [
+            {
+                "id": "subject-verb-agreement",
+                "title": "Subject–Verb Agreement",
+                "description": "Match singular and plural subjects with the correct verb forms.",
+                "difficulty": "Beginner",
+                "definition": "Subject–verb agreement means that the verb in a sentence must match its subject in number and person.",
+                "rules": [
+                    "Use a singular verb with a singular subject and a plural verb with a plural subject.",
+                    "In the present simple, add -s or -es to the verb when the subject is he, she, or it."
+                ],
+                "examples": [
+                    {
+                        "sentence": "The student reads every evening.",
+                        "explanation": "The singular subject 'student' takes the singular verb 'reads'."
+                    },
+                    {
+                        "sentence": "The students read every evening.",
+                        "explanation": "The plural subject 'students' takes the plural verb 'read'."
+                    }
+                ],
+                "commonMistakes": [
+                    {
+                        "incorrect": "She walk to school.",
+                        "correct": "She walks to school."
+                    },
+                    {
+                        "incorrect": "They walks to school.",
+                        "correct": "They walk to school."
+                    }
+                ],
+                "quickTip": "Find the main subject first, then choose the verb form that matches it."
+            },
+            {
+                "id": "sentence-structure",
+                "title": "Basic Sentence Structure",
+                "description": "Arrange subjects, verbs, and objects into complete sentences.",
+                "difficulty": "Beginner",
+                "definition": "A basic English sentence expresses a complete thought and normally contains a subject followed by a verb, with an object or complement when needed.",
+                "rules": [
+                    "Place the subject before the verb in a standard statement.",
+                    "Include an object after a transitive verb to show who or what receives the action."
+                ],
+                "examples": [
+                    {
+                        "sentence": "Maya writes stories.",
+                        "explanation": "Maya is the subject, writes is the verb, and stories is the object."
+                    },
+                    {
+                        "sentence": "The sky is blue.",
+                        "explanation": "The linking verb 'is' connects the subject to its complement."
+                    }
+                ],
+                "commonMistakes": [
+                    {
+                        "incorrect": "Plays football Arjun.",
+                        "correct": "Arjun plays football."
+                    },
+                    {
+                        "incorrect": "My friend bought.",
+                        "correct": "My friend bought a book."
+                    }
+                ],
+                "quickTip": "Check that your sentence answers: who or what, does what, and—when needed—to whom or what."
+            },
+            {
+                "id": "clauses",
+                "title": "Independent and Dependent Clauses",
+                "description": "Recognize complete ideas and clauses that need more information.",
+                "difficulty": "Intermediate",
+                "definition": "An independent clause can stand alone as a complete sentence, while a dependent clause contains a subject and verb but cannot express a complete thought by itself.",
+                "rules": [
+                    "An independent clause must contain a subject, a verb, and a complete thought.",
+                    "Connect a dependent clause to an independent clause to form a complete sentence."
+                ],
+                "examples": [
+                    {
+                        "sentence": "I stayed inside because it was raining.",
+                        "explanation": "'I stayed inside' is independent; 'because it was raining' is dependent."
+                    },
+                    {
+                        "sentence": "When the bell rang, the class ended.",
+                        "explanation": "The opening dependent clause is completed by the independent clause."
+                    }
+                ],
+                "commonMistakes": [
+                    {
+                        "incorrect": "Because I was tired.",
+                        "correct": "I went to bed because I was tired."
+                    },
+                    {
+                        "incorrect": "When the meeting finished.",
+                        "correct": "We left when the meeting finished."
+                    }
+                ],
+                "quickTip": "If a group of words begins with because, when, although, or if, check that it is joined to a complete thought."
+            }
+        ]
+    },
+    {
+        "id": "verbs-and-time",
+        "title": "Verbs and Time",
+        "description": "Understand how verb forms communicate when actions happen.",
+        "topics": [
+            {
+                "id": "present-simple",
+                "title": "Present Simple",
+                "description": "Describe routines, habits, facts, and repeated actions.",
+                "difficulty": "Beginner",
+                "definition": "The present simple describes habits, routines, general truths, and situations that are regularly or permanently true.",
+                "rules": [
+                    "Use the base verb with I, you, we, and they.",
+                    "Add -s or -es to the verb with he, she, and it."
+                ],
+                "examples": [
+                    {
+                        "sentence": "I drink tea every morning.",
+                        "explanation": "This sentence describes a regular habit."
+                    },
+                    {
+                        "sentence": "Water boils at 100°C.",
+                        "explanation": "This sentence states a general truth."
+                    }
+                ],
+                "commonMistakes": [
+                    {
+                        "incorrect": "He work on Mondays.",
+                        "correct": "He works on Mondays."
+                    },
+                    {
+                        "incorrect": "I am go to class daily.",
+                        "correct": "I go to class daily."
+                    }
+                ],
+                "quickTip": "Words such as always, usually, often, and every day commonly signal the present simple."
+            },
+            {
+                "id": "past-simple",
+                "title": "Past Simple",
+                "description": "Talk about completed actions and events in the past.",
+                "difficulty": "Beginner",
+                "definition": "The past simple describes an action or situation that started and finished at a definite time in the past.",
+                "rules": [
+                    "Add -ed to regular verbs; learn the separate forms of irregular verbs.",
+                    "Use did not plus the base verb for negatives and did plus the base verb for questions."
+                ],
+                "examples": [
+                    {
+                        "sentence": "We visited Jaipur last year.",
+                        "explanation": "The visit was completed at a stated past time."
+                    },
+                    {
+                        "sentence": "She wrote the email yesterday.",
+                        "explanation": "'Wrote' is the irregular past form of 'write'."
+                    }
+                ],
+                "commonMistakes": [
+                    {
+                        "incorrect": "I goed home early.",
+                        "correct": "I went home early."
+                    },
+                    {
+                        "incorrect": "Did you visited them?",
+                        "correct": "Did you visit them?"
+                    }
+                ],
+                "quickTip": "After 'did' or 'did not', always use the base form of the main verb."
+            },
+            {
+                "id": "present-perfect",
+                "title": "Present Perfect",
+                "description": "Connect past actions and experiences to the present.",
+                "difficulty": "Intermediate",
+                "definition": "The present perfect links the past to the present and is formed with have or has plus the past participle.",
+                "rules": [
+                    "Use have with I, you, we, and they; use has with he, she, and it.",
+                    "Use it for experiences or past actions with a present result when no finished past time is stated."
+                ],
+                "examples": [
+                    {
+                        "sentence": "I have visited Mumbai three times.",
+                        "explanation": "This describes life experience without a finished time."
+                    },
+                    {
+                        "sentence": "She has lost her keys.",
+                        "explanation": "The past action has a present result: she does not have the keys now."
+                    }
+                ],
+                "commonMistakes": [
+                    {
+                        "incorrect": "He have finished his work.",
+                        "correct": "He has finished his work."
+                    },
+                    {
+                        "incorrect": "I have seen her yesterday.",
+                        "correct": "I saw her yesterday."
+                    }
+                ],
+                "quickTip": "Use the past simple—not the present perfect—with finished-time words such as yesterday or last week."
+            }
+        ]
+    }
+]
